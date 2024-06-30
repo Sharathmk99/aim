@@ -14,8 +14,10 @@ export interface IIllustrationBlockProps {
     | 'image'
     | 'audio'
     | 'scatters'
+    | 'figures'
     | 'bookmarks'
     | 'tags';
   type?: IllustrationsEnum;
   size?: 'small' | 'medium' | 'large' | 'xLarge';
+  showImage?: boolean;
 }

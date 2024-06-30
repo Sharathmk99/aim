@@ -10,12 +10,14 @@ export interface IIconProps
   className?: string;
   style?: CSSProperties;
   fontSize?: number | string;
+  weight?: number | string;
   color?: string;
 }
 
 export type IconName =
   | 'close-rectangle'
   | 'close'
+  | 'close-circle'
   | 'eye-fill-show'
   | 'eye-outline-hide'
   | 'eye-show-outline'
@@ -27,6 +29,9 @@ export type IconName =
   | 'pin-right'
   | 'pin-left'
   | 'pin'
+  | 'pin-to-top'
+  | 'flexible'
+  | 'pin-to-bottom'
   | 'expand-horizontal'
   | 'expand-vertical'
   | 'arrow-up'
@@ -138,4 +143,21 @@ export type IconName =
   | 'warning-outline'
   | 'warning-contained'
   | 'info-circle-outline'
-  | 'axes-props';
+  | 'axes-props'
+  | 'compare'
+  | 'box-settings'
+  | 'full-screen'
+  | 'new-tab'
+  | 'figures'
+  | 'group-column'
+  | 'image-group'
+  | 'partially-selected'
+  | 'arrow-left-contained'
+  | 'arrow-up-contained'
+  | 'arrow-right-contained'
+  | 'arrow-down-contained'
+  | 'audios'
+  | 'distributions'
+  | 'dashboard'
+  | 'chart-legends'
+  | 'metric-value';

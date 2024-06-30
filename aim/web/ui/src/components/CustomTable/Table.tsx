@@ -54,8 +54,6 @@ function Table(props) {
     .sort((a, b) => rightCols.indexOf(a.key) - rightCols.indexOf(b.key));
   const sortedColumns = [...leftPane, ...middlePane, ...rightPane];
 
-  const middlePaneColsKey = middlePane.map((col) => col.key).join('');
-
   const groups = !Array.isArray(props.data);
 
   useEffect(() => {
@@ -127,12 +125,7 @@ function Table(props) {
       };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      props.listWindow.left,
-      props.listWindow.width,
-      colLefts,
-      middlePaneColsKey,
-    ],
+    [props.listWindow.left, props.listWindow.width, colLefts, columns],
   );
 
   const color = React.useMemo(
@@ -267,12 +260,10 @@ function Table(props) {
     props.updateColumns(columnsOrderClone);
   }
 
-  function showTopHeaderContent(index, col, add) {
+  function showTopHeaderContent(index, colTopHeader, add) {
     return (
       props.topHeader &&
-      sortedColumns[
-        (leftPane ? leftPane.length : 0) + (add ? index + 1 : index - 1)
-      ]?.topHeader !== col.topHeader
+      sortedColumns[add ? index + 1 : index - 1]?.topHeader !== colTopHeader
     );
   }
 
@@ -317,10 +308,11 @@ function Table(props) {
             <ErrorBoundary key={'selection'}>
               <div
                 className={classNames('Table__pane Table__pane--selection', {
-                  onlyGroupColumn: leftPane.length === 0,
+                  withShadow: leftPane.length === 0,
                 })}
               >
                 <Column
+                  noColumnActions={props.noColumnActions}
                   topHeader={true}
                   showTopHeaderContent={true}
                   showTopHeaderBorder={true}
@@ -347,7 +339,7 @@ function Table(props) {
                             </span>
                           ) : (
                             <span className='Table__column__partiallySelectedSelectIcon'>
-                              <Icon name='partially-selected' fontSize={16} />
+                              <Icon name='partially-selected' fontSize={14} />
                             </span>
                           )
                         }
@@ -400,16 +392,24 @@ function Table(props) {
               {leftPane.map((col, index) => (
                 <ErrorBoundary key={col.key}>
                   <Column
+                    noColumnActions={props.noColumnActions}
                     topHeader={props.topHeader}
-                    showTopHeaderContent={showTopHeaderContent(index, col)}
-                    showTopHeaderBorder={showTopHeaderContent(index, col, true)}
+                    showTopHeaderContent={showTopHeaderContent(
+                      index,
+                      col.topHeader,
+                    )}
+                    showTopHeaderBorder={showTopHeaderContent(
+                      index,
+                      col.topHeader,
+                      true,
+                    )}
                     col={col}
                     data={props.data}
                     expanded={expanded}
                     expand={expand}
                     togglePin={togglePin}
                     pinnedTo='left'
-                    firstColumn={index === 0 && !props.multiSelect}
+                    firstColumn={index === 0}
                     width={props.columnsWidths?.[col.key]}
                     updateColumnWidth={props.updateColumnsWidths}
                     headerMeta={props.headerMeta}
@@ -439,9 +439,6 @@ function Table(props) {
                         (f) => f[0] === col.sortableKey,
                       ) === -1
                     }
-                    sortByColumn={(order) =>
-                      props.onSort(col.sortableKey, order)
-                    }
                     onRowHover={props.onRowHover}
                     onRowClick={props.onRowClick}
                     columnOptions={col.columnOptions}
@@ -456,17 +453,25 @@ function Table(props) {
           <div
             className='Table__pane Table__pane--middle'
             style={{
-              width: midPaneWidth,
+              width: isNaN(midPaneWidth) ? null : midPaneWidth,
             }}
           >
-            {middlePaneWindow?.map((col, i) => {
+            {middlePaneWindow?.map((col) => {
               let index = col.colIndex;
               return (
                 <ErrorBoundary key={col.key + index}>
                   <Column
+                    noColumnActions={props.noColumnActions}
                     topHeader={props.topHeader}
-                    showTopHeaderContent={showTopHeaderContent(index, col)}
-                    showTopHeaderBorder={showTopHeaderContent(index, col, true)}
+                    showTopHeaderContent={showTopHeaderContent(
+                      leftPane.length + index,
+                      col.topHeader,
+                    )}
+                    showTopHeaderBorder={showTopHeaderContent(
+                      leftPane.length + index,
+                      col.topHeader,
+                      true,
+                    )}
                     col={col}
                     data={props.data}
                     expanded={expanded}
@@ -503,9 +508,6 @@ function Table(props) {
                         (f) => f[0] === col.sortableKey,
                       ) === -1
                     }
-                    sortByColumn={(order) =>
-                      props.onSort(col.sortableKey, order)
-                    }
                     rowHeightMode={props.rowHeightMode}
                     onRowHover={props.onRowHover}
                     onRowClick={props.onRowClick}
@@ -530,10 +532,18 @@ function Table(props) {
               {rightPane.map((col, index) => (
                 <ErrorBoundary key={col.key}>
                   <Column
+                    noColumnActions={props.noColumnActions}
                     key={col.key}
                     topHeader={props.topHeader}
-                    showTopHeaderContent={showTopHeaderContent(index, col)}
-                    showTopHeaderBorder={showTopHeaderContent(index, col, true)}
+                    showTopHeaderContent={showTopHeaderContent(
+                      index,
+                      col.topHeader,
+                    )}
+                    showTopHeaderBorder={showTopHeaderContent(
+                      index,
+                      col.topHeader,
+                      true,
+                    )}
                     col={col}
                     data={props.data}
                     expanded={expanded}
@@ -573,9 +583,6 @@ function Table(props) {
                       props.sortFields.findIndex(
                         (f) => f[0] === col.sortableKey,
                       ) === -1
-                    }
-                    sortByColumn={(order) =>
-                      props.onSort(col.sortableKey, order)
                     }
                     onRowHover={props.onRowHover}
                     onRowClick={props.onRowClick}

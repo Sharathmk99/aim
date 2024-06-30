@@ -54,8 +54,27 @@ def str_to_range(range_str: str):
     return IndexRange(start, stop)
 
 
+def convert_nan_and_inf_to_str(tree):
+    if tree == float('inf'):
+        return 'inf'
+    if tree == float('-inf'):
+        return '-inf'
+    if tree != tree:  # x == x is False for NaN, strings break math.isnan
+        return 'NaN'
+    if isinstance(tree, dict):
+        return {
+            key: convert_nan_and_inf_to_str(value)
+            for key, value in tree.items()
+        }
+    if isinstance(tree, tuple):
+        return tuple(convert_nan_and_inf_to_str(value) for value in tree)
+    if isinstance(tree, list):
+        return [convert_nan_and_inf_to_str(value) for value in tree]
+    return tree
+
+
 def get_run_params(run: Run, *, skip_system: bool):
-    params = run.get(..., resolve_objects=True)
+    params = run.get(..., {}, resolve_objects=True)
     if skip_system and '__system_params' in params:
         del params['__system_params']
     return params
@@ -68,6 +87,7 @@ def get_run_props(run: Run):
         'experiment': {
             'id': run.props.experiment_obj.uuid,
             'name': run.props.experiment_obj.name,
+            'description': run.props.experiment_obj.description,
         } if run.props.experiment_obj else None,
         'tags': [{'id': tag.uuid,
                   'name': tag.name,
@@ -79,6 +99,17 @@ def get_run_props(run: Run):
         'end_time': run.end_time,
         'active': run.active
     }
+
+
+def get_run_artifacts(run: Run):
+    artifacts_info = []
+    for artifact in run.artifacts.values():
+        artifacts_info.append({
+            'name': artifact.name,
+            'path': artifact.path,
+            'uri': artifact.uri,
+        })
+    return artifacts_info
 
 
 def numpy_to_encodable(array: np.ndarray) -> Optional[dict]:
@@ -227,7 +258,9 @@ async def metric_search_result_streamer(traces: SequenceCollection,
 async def run_search_result_streamer(runs: SequenceCollection,
                                      limit: int,
                                      skip_system: bool,
-                                     report_progress: Optional[bool] = True) -> bytes:
+                                     report_progress: Optional[bool] = True,
+                                     exclude_params: Optional[bool] = False,
+                                     exclude_traces: Optional[bool] = False) -> bytes:
     try:
         run_count = 0
         last_reported_progress_time = time.time()
@@ -247,11 +280,13 @@ async def run_search_result_streamer(runs: SequenceCollection,
             run = run_trace_collection.run
             run_dict = {
                 run.hash: {
-                    'params': get_run_params(run, skip_system=skip_system),
-                    'traces': run.collect_sequence_info(sequence_types='metric'),
                     'props': get_run_props(run)
                 }
             }
+            if not exclude_params:
+                run_dict[run.hash]['params'] = get_run_params(run, skip_system=skip_system)
+            if not exclude_traces:
+                run_dict[run.hash]['traces'] = run.collect_sequence_info(sequence_types='metric')
 
             encoded_tree = encode_tree(run_dict)
             yield collect_streamable_data(encoded_tree)
@@ -265,6 +300,37 @@ async def run_search_result_streamer(runs: SequenceCollection,
 
         if report_progress and progress:
             yield collect_streamable_data(encode_tree({f'progress_{progress_reports_sent}': progress}))
+    except asyncio.CancelledError:
+        pass
+
+
+async def run_active_result_streamer(repo: 'Repo', report_progress: Optional[bool] = True):
+    try:
+        active_run_hashes = repo.list_active_runs()
+
+        active_runs_count = len(active_run_hashes)
+        progress_reports_sent = 0
+
+        for run_hash in active_run_hashes:
+            await asyncio.sleep(ASYNC_SLEEP_INTERVAL)
+
+            run = Run(run_hash, repo=repo, read_only=True)
+            if run.active:
+                run_dict = {
+                    run.hash: {
+                        'props': get_run_props(run),
+                        'traces': run.collect_sequence_info(sequence_types='metric')
+                    }
+                }
+
+                encoded_tree = encode_tree(run_dict)
+                yield collect_streamable_data(encoded_tree)
+
+            if report_progress:
+                yield collect_streamable_data(encode_tree(
+                    {f'progress_{progress_reports_sent}': (progress_reports_sent + 1, active_runs_count)}
+                ))
+                progress_reports_sent += 1
     except asyncio.CancelledError:
         pass
 
@@ -311,12 +377,55 @@ async def run_logs_streamer(run: Run, record_range: str) -> bytes:
 
     # range is missing completely
     if record_range.start is None and record_range.stop is None:
-        start = max(logs.last_step() - 500, 0)
+        start = max(logs.last_step() - 200, 0)
 
-    steps_vals = logs.data.view('val').range(start, stop)
-    for step, (val,) in steps_vals:
-        encoded_tree = encode_tree({step: val.data})
-        yield collect_streamable_data(encoded_tree)
+    try:
+        steps_vals = logs.data.view('val').range(start, stop)
+        for step, (val,) in steps_vals:
+            await asyncio.sleep(ASYNC_SLEEP_INTERVAL)
+            encoded_tree = encode_tree({step: val.data})
+            yield collect_streamable_data(encoded_tree)
+    except asyncio.CancelledError:
+        pass
+
+
+async def run_log_records_streamer(run: Run, record_range: str) -> bytes:
+    logs = run.get_log_records()
+
+    if not logs:
+        return
+
+    record_range = checked_range(record_range)
+    start = record_range.start
+    stop = record_range.stop
+
+    # range stop is missing
+    if record_range.stop is None:
+        stop = logs.last_step() + 1
+
+    # range start is missing
+    if record_range.start is None:
+        start = 0
+
+    # range is missing completely
+    log_records_count = logs.last_step() + 1
+
+    if record_range.start is None and record_range.stop is None:
+        start = max(log_records_count - 200, 0)
+
+    last_notified_log_step = run.props.info.last_notification_index
+
+    try:
+        yield collect_streamable_data(encode_tree({'log_records_count': log_records_count}))
+        steps_vals = logs.data.view('val').range(start, stop)
+        for step, (val,) in steps_vals:
+            await asyncio.sleep(ASYNC_SLEEP_INTERVAL)
+            result = val.json()
+            result['is_notified'] = (step >= last_notified_log_step)
+            encoded_tree = encode_tree({step: result})
+            yield collect_streamable_data(encoded_tree)
+    except asyncio.CancelledError:
+        pass
 
 
 def get_project():

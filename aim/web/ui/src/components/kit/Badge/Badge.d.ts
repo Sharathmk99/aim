@@ -2,9 +2,11 @@ import React from 'react';
 
 import { IconName } from '../Icon/Icon.d';
 
-export interface IBadgeProps {
+export interface IBadgeProps
+  extends Partial<React.HTMLAttributes<HTMLDivElement>> {
   id?: string;
   label: string;
+  value?: string;
   color?: string;
   startIcon?: IconName;
   size?: 'xSmall' | 'small' | 'medium' | 'large' | 'xLarge';

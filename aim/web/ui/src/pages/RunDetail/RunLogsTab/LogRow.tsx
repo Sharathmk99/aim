@@ -1,5 +1,7 @@
 import React from 'react';
 
+import formatAnsiToHtml from 'utils/formatAnsiToHtml';
+
 function LogRow({
   index,
   style,
@@ -8,12 +10,17 @@ function LogRow({
   index: number;
   style: React.CSSProperties;
   data: {
-    logsList: Array<{ index: string; value: string }>;
+    logsList: string[];
   };
 }) {
   return (
     <div style={style}>
-      <pre className={'LogRow__line'}>{data.logsList?.[index - 1]?.value}</pre>
+      <pre
+        className='LogRow__line'
+        dangerouslySetInnerHTML={{
+          __html: formatAnsiToHtml(data.logsList?.[index - 1] ?? ''),
+        }}
+      />
     </div>
   );
 }

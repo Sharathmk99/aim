@@ -1,7 +1,7 @@
-import { ZoomEnum } from 'components/ZoomInPopover/ZoomInPopover';
-
 import { GroupNameEnum } from 'config/grouping/GroupingPopovers';
 import { RequestStatusEnum } from 'config/enums/requestStatusEnum';
+
+import { TooltipAppearanceEnum } from 'modules/BaseExplorer/components/Controls/ConfigureTooltip';
 
 import {
   IAppModelConfig,
@@ -22,8 +22,14 @@ import {
   AggregationAreaMethods,
   AggregationLineMethods,
 } from 'utils/aggregateGroupData';
-import { AlignmentOptionsEnum } from 'utils/d3';
+import {
+  AlignmentOptionsEnum,
+  CurveEnum,
+  ZoomEnum,
+  LegendsModeEnum,
+} from 'utils/d3';
 import { IRequestProgress } from 'utils/app/setRequestProgress';
+import { SmoothingAlgorithmEnum } from 'utils/smoothingData';
 
 import { IMetric } from './metricModel';
 import { IMetricTrace, IRun, ISequence } from './runModel';
@@ -42,6 +48,7 @@ export interface IMetricAppModelState {
   lineChartData: ILine[][];
   chartTitleData: IChartTitleData;
   aggregatedData: IAggregatedData[];
+  legendsData: LegendsDataType;
   tooltip: ITooltip;
   tableData: any[];
   tableColumns: ITableColumn[];
@@ -75,7 +82,7 @@ export interface IAggregatedData extends IAggregationData {
   key?: string;
   color: string;
   dasharray: string;
-  chartIndex: number;
+  chartIndex?: number;
 }
 
 export interface ITooltipContent {
@@ -92,6 +99,7 @@ export interface ITooltipContent {
 }
 
 export interface ITooltipConfig {
+  appearance: TooltipAppearanceEnum;
   display: boolean;
   selectedFields: string[];
 }
@@ -100,10 +108,15 @@ export interface ITooltip extends Partial<ITooltipConfig> {
   content?: ITooltipContent;
 }
 
+export interface LegendsConfig {
+  display: boolean;
+  mode: LegendsModeEnum;
+}
+
 export interface IMetricsCollection<T> {
   key?: string;
   groupKey?: string;
-  config: { [key: string]: string } | null;
+  config: Record<string, unknown> | null;
   color: string | null;
   dasharray: string | null;
   chartIndex: number;
@@ -140,7 +153,7 @@ export interface IChartZoom {
   active: boolean;
   mode: ZoomEnum;
   history: {
-    index: number;
+    id: string;
     xValues: [number, number];
     yValues: [number, number];
   }[];
@@ -157,7 +170,7 @@ export interface IAggregationConfig {
     line: AggregationLineMethods;
   };
   isApplied: boolean;
-  isEnabled: boolean;
+  isEnabled?: boolean;
 }
 
 export interface IFocusedState {
@@ -166,6 +179,7 @@ export interface IFocusedState {
   xValue?: number | string | null;
   yValue?: number | string | null;
   chartIndex?: number | null;
+  visId?: string | null;
 }
 
 export interface IMetricTableRowData {
@@ -181,12 +195,6 @@ export interface IMetricTableRowData {
   epoch: string;
   time: number | null;
   [key: string]: any;
-}
-
-export interface IGetDataAsLinesProps {
-  smoothingFactor?: number;
-  smoothingAlgorithm?: string;
-  collection?: IMetric[][];
 }
 
 export interface IOnGroupingSelectChangeParams {
@@ -241,9 +249,27 @@ export interface IAlignMetricsDataParams {
   runs: {
     run_id: string;
     traces: {
-      context: IMetricTrace['context'];
-      metric_name: string;
+      context: { [key: string]: unknown };
+      name: string;
       slice: number[];
     }[];
   }[];
+}
+
+export interface ISmoothing {
+  algorithm: SmoothingAlgorithmEnum;
+  factor: number;
+  curveInterpolation: CurveEnum;
+  isApplied: boolean;
+}
+
+export interface LegendColumnDataType {
+  color?: string;
+  dasharray?: string;
+  chartIndex?: number;
+  value: string;
+}
+
+export interface LegendsDataType {
+  [key: string]: Record<string, LegendColumnDataType[]>;
 }

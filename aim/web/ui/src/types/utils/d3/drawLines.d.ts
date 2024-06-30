@@ -1,16 +1,14 @@
 import React from 'react';
 
-import { HighlightEnum } from 'components/HighlightModesPopover/HighlightModesPopover';
-
 import { IAggregationConfig } from 'types/services/models/metrics/metricsAppModel';
 
-import { CurveEnum } from 'utils/d3';
+import { CurveEnum, HighlightEnum } from 'utils/d3';
 
 import { IDrawAxesArgs } from './drawAxes';
 import { IProcessedAggrData, IProcessedData } from './processLineChartData';
 
 export interface IDrawLinesArgs {
-  index: number;
+  id: string;
   nameKey: string;
   linesRef: React.MutableRefObject<>;
   linesNodeRef: React.MutableRefObject<>;

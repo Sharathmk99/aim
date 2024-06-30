@@ -58,5 +58,8 @@ export interface IParam {
   color: string;
   key: string;
   dasharray: string;
-  metricsLastValues: { [key: string]: any };
+  metricsValues?: Record<
+    string,
+    Record<'last' | 'min' | 'max' | 'first', number | string>
+  >;
 }

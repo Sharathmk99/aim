@@ -1,22 +1,27 @@
 import React from 'react';
 
-import { HighlightEnum } from 'components/HighlightModesPopover/HighlightModesPopover';
 import { IPoint } from 'components/ScatterPlot';
 
 import { ILine, IAttributesRef } from 'types/components/LineChart/LineChart';
 import {
   IAggregationConfig,
   IAlignmentConfig,
+  IFocusedState,
 } from 'types/services/models/metrics/metricsAppModel';
 
-import { ScaleEnum } from 'utils/d3';
+import { ScaleEnum, HighlightEnum } from 'utils/d3';
 
 import { IAxisScale } from './getAxisScale';
+import { IProcessedData } from './processLineChartData';
+
+export type HoverAttrData = ILine | IPoint;
 
 export interface IDrawHoverAttributesArgs {
-  index: number;
+  index?: number;
+  id: string;
   nameKey: string;
-  data: ILine[] | IPoint[];
+  data: HoverAttrData[];
+  processedData?: IProcessedData[];
   axesScaleType: { xAxis: ScaleEnum; yAxis: ScaleEnum };
   visAreaRef: React.MutableRefObject<>;
   attributesNodeRef: React.MutableRefObject<>;
@@ -40,7 +45,7 @@ export interface IDrawHoverAttributesArgs {
 export interface ISyncHoverStateArgs {
   activePoint: IActivePoint | null;
   dataSelector?: string;
-  focusedStateActive?: boolean;
+  focusedState?: IFocusedState;
 }
 
 export type IAxisLineData = { x1: number; y1: number; x2: number; y2: number };
@@ -62,6 +67,7 @@ export interface INearestCircle {
   y: number;
   key: string;
   color: string;
+  inProgress?: boolean;
 }
 
 export interface IActivePoint {
@@ -71,10 +77,22 @@ export interface IActivePoint {
   xPos: number;
   yPos: number;
   chartIndex: number;
-  pointRect: {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  } | null;
+  visId: string;
+  inProgress?: boolean;
+  pointRect: IActivePointRect | null;
+  rect: IActiveElementRect;
+}
+
+export interface IActivePointRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+export interface IActiveElementRect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
 }

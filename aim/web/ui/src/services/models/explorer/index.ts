@@ -5,7 +5,7 @@ import { ChartTypeEnum } from 'utils/d3';
 import createAppModel from './createAppModel';
 
 /**
- *  Constants and Enums we can create and export from this file
+ *  Constants and enums we can create and export from this file
  */
 
 export enum AppDataTypeEnum {
@@ -20,6 +20,9 @@ export enum AppNameEnum {
   RUNS = 'runs',
   IMAGES = 'images',
   SCATTERS = 'scatters',
+  FIGURES = 'figures',
+  AUDIOS = 'audios',
+  TEXT = 'text',
 }
 
 /**

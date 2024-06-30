@@ -10,7 +10,8 @@ from aim.sdk.utils import clean_repo_path
                                                         file_okay=False,
                                                         dir_okay=True,
                                                         writable=True))
-def init(repo):
+@click.option('-y', '--yes', is_flag=True, help='Automatically confirm prompt')
+def init(repo, yes):
     """
     Initializes new repository in the --repo directory.
     Initializes new repository in the current working directory if --repo argument is not provided:
@@ -19,8 +20,11 @@ def init(repo):
     repo_path = clean_repo_path(repo) or os.getcwd()
     re_init = False
     if Repo.exists(repo_path):
-        re_init = click.confirm('Aim repository is already initialized. '
-                                'Do you want to re-initialize to empty Aim repository?')
+        if yes:
+            re_init = True
+        else:
+            re_init = click.confirm('Aim repository is already initialized. '
+                                    'Do you want to re-initialize to empty Aim repository?')
         if not re_init:
             return
         # Clear old repo

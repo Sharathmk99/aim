@@ -1,11 +1,13 @@
 import logging
 from typing import Dict, Optional, Union
 from typing import TYPE_CHECKING
+import pathlib
 
 from aim.storage.hashing import hash_auto
 from aim.storage.treeview import TreeView
 from aim.sdk.utils import generate_run_hash
 from aim.sdk.repo_utils import get_repo
+from aim.sdk.errors import MissingRunError
 from aim.sdk.tracker import STEP_HASH_FUNCTIONS
 
 if TYPE_CHECKING:
@@ -22,13 +24,26 @@ class BaseRun:
         return object.__new__(cls)
 
     def __init__(self, run_hash: Optional[str] = None,
-                 repo: Optional[Union[str, 'Repo']] = None,
-                 read_only: bool = False):
-        self.hash = run_hash or generate_run_hash()
+                 repo: Optional[Union[str, 'Repo', pathlib.Path]] = None,
+                 read_only: bool = False,
+                 force_resume: bool = False):
+        self._hash = None
+        self._lock = None
+
         self.read_only = read_only
         self.repo = get_repo(repo)
-
-        self._hash = None
+        if self.read_only:
+            assert run_hash is not None
+            self.hash = run_hash
+        else:
+            if run_hash is None:
+                self.hash = generate_run_hash()
+            elif self.repo.run_exists(run_hash):
+                self.hash = run_hash
+            else:
+                raise MissingRunError(f'Cannot find Run {run_hash} in aim Repo {self.repo.path}.')
+            self._lock = self.repo.request_run_lock(self.hash)
+            self._lock.lock(force=force_resume)
 
         self.meta_tree: TreeView = self.repo.request_tree(
             'meta', self.hash, read_only=read_only, from_union=True

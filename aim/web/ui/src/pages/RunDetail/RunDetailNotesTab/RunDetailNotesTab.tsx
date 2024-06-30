@@ -2,6 +2,7 @@ import React from 'react';
 import classNames from 'classnames';
 import Editor from 'rich-markdown-editor';
 import moment from 'moment';
+import { useModel } from 'hooks';
 
 import { Tooltip } from '@material-ui/core';
 
@@ -12,8 +13,7 @@ import RouteLeavingGuard from 'components/RouteLeavingGuard';
 
 import { ANALYTICS_EVENT_KEYS } from 'config/analytics/analyticsKeysMap';
 import { RichEditorThemeColors } from 'config/colors/colors';
-
-import useModel from 'hooks/model/useModel';
+import { YEAR_MONTH_DAY_DATE_FORMAT } from 'config/dates/dates';
 
 import * as analytics from 'services/analytics';
 import notesModel from 'services/models/notes/notesModel';
@@ -101,7 +101,7 @@ function RunDetailNotesTab({
                     {`${moment
                       .utc(noteData?.created_at)
                       .local()
-                      .format('YYYY-MM-DD HH:mm A')}`}
+                      .format(YEAR_MONTH_DAY_DATE_FORMAT)}`}
                   </Text>
                 </div>
               </Tooltip>
@@ -114,7 +114,7 @@ function RunDetailNotesTab({
                     {`${moment
                       .utc(noteData?.updated_at)
                       .local()
-                      .format('YYYY-MM-DD HH:mm A')}`}
+                      .format(YEAR_MONTH_DAY_DATE_FORMAT)}`}
                   </Text>
                 </div>
               </Tooltip>
@@ -127,6 +127,7 @@ function RunDetailNotesTab({
                 variant='contained'
                 size='small'
                 onClick={onNoteSave}
+                className='RunDetailNotesTab__Editor__actionPanel__saveBtn'
               >
                 Save
               </Button>
@@ -145,7 +146,11 @@ function RunDetailNotesTab({
           }}
           onChange={onNoteChange}
         />
-        {isLoading && <Spinner />}
+        {isLoading && (
+          <div className='RunDetailNotesTab__spinnerWrapper'>
+            <Spinner />
+          </div>
+        )}
       </div>
       {notifyData!.length > 0 && (
         <NotificationContainer

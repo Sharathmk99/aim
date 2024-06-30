@@ -41,6 +41,7 @@ def _cleanup_test_repo(path):
 
 
 def pytest_sessionstart(session):
+
     if os.environ.get('AIM_LOCAL_PERFORMANCE_TEST'):
         _init_test_repos()
     else:

@@ -4,15 +4,20 @@ import { merge } from 'lodash-es';
 import { Badge } from 'components/kit';
 import RunNameColumn from 'components/Table/RunNameColumn';
 import GroupedColumnHeader from 'components/Table/GroupedColumnHeader';
+import AttachedTagsList from 'components/AttachedTagsList/AttachedTagsList';
+import ExperimentNameBox from 'components/ExperimentNameBox';
 
 import COLORS from 'config/colors/colors';
 import { TABLE_DEFAULT_CONFIG } from 'config/table/tableConfigs';
 
 import { ITableColumn } from 'types/pages/metrics/components/TableColumns/TableColumns';
+import { ITagInfo } from 'types/pages/tags/Tags';
 
-import { isSystemMetric } from 'utils/isSystemMetric';
 import { formatSystemMetricName } from 'utils/formatSystemMetricName';
 import alphabeticalSortComparator from 'utils/alphabeticalSortComparator';
+import { getMetricHash } from 'utils/app/getMetricHash';
+import { getMetricLabel } from 'utils/app/getMetricLabel';
+import { isSystemMetric } from 'utils/isSystemMetric';
 
 function getRunsTableColumns(
   metricsColumns: any,
@@ -21,6 +26,30 @@ function getRunsTableColumns(
   hiddenColumns: string[],
 ): ITableColumn[] {
   let columns: ITableColumn[] = [
+    {
+      key: 'experiment',
+      content: <span>Name</span>,
+      topHeader: 'Experiment',
+      pin: order?.left?.includes('experiment')
+        ? 'left'
+        : order?.middle?.includes('experiment')
+        ? null
+        : order?.right?.includes('experiment')
+        ? 'right'
+        : null,
+    },
+    {
+      key: 'experiment_description',
+      content: <span>Description</span>,
+      topHeader: 'Experiment',
+      pin: order?.left?.includes('experiment_description')
+        ? 'left'
+        : order?.middle?.includes('experiment_description')
+        ? null
+        : order?.right?.includes('experiment_description')
+        ? 'right'
+        : null,
+    },
     {
       key: 'hash',
       content: <span>Hash</span>,
@@ -44,18 +73,6 @@ function getRunsTableColumns(
         : order?.right?.includes('run')
         ? 'right'
         : 'left',
-    },
-    {
-      key: 'experiment',
-      content: <span>Experiment</span>,
-      topHeader: 'Run',
-      pin: order?.left?.includes('experiment')
-        ? 'left'
-        : order?.middle?.includes('experiment')
-        ? null
-        : order?.right?.includes('experiment')
-        ? 'right'
-        : null,
     },
     {
       key: 'description',
@@ -91,17 +108,30 @@ function getRunsTableColumns(
         ? 'right'
         : null,
     },
+    {
+      key: 'tags',
+      content: <span>Tags</span>,
+      topHeader: 'Run',
+      pin: order?.left?.includes('tags')
+        ? 'left'
+        : order?.right?.includes('tags')
+        ? 'right'
+        : null,
+    },
   ].concat(
-    Object.keys(metricsColumns).reduce((acc: any, key: string) => {
-      const systemMetric: boolean = isSystemMetric(key);
+    Object.keys(metricsColumns).reduce((acc: any, metricName: string) => {
       const systemMetricsList: ITableColumn[] = [];
+      const isSystem = isSystemMetric(metricName);
       const metricsList: ITableColumn[] = [];
-      Object.keys(metricsColumns[key]).forEach((metricContext) => {
-        const columnKey = `${systemMetric ? key : `${key}_${metricContext}`}`;
+      Object.keys(metricsColumns[metricName]).forEach((metricContext) => {
+        const metricHash = getMetricHash(metricName, metricContext);
+        const metricLabel = getMetricLabel(metricName, metricContext);
+
         let column = {
-          key: columnKey,
-          content: systemMetric ? (
-            <span>{formatSystemMetricName(key)}</span>
+          key: metricHash,
+          label: metricLabel,
+          content: isSystem ? (
+            <span>{formatSystemMetricName(metricName)}</span>
           ) : (
             <Badge
               monospace
@@ -110,16 +140,14 @@ function getRunsTableColumns(
               label={metricContext === '' ? 'Empty context' : metricContext}
             />
           ),
-          topHeader: systemMetric ? 'System Metrics' : key,
-          pin: order?.left?.includes(columnKey)
+          topHeader: isSystem ? 'System Metrics' : metricName,
+          pin: order?.left?.includes(metricHash)
             ? 'left'
-            : order?.right?.includes(columnKey)
+            : order?.right?.includes(metricHash)
             ? 'right'
             : null,
         };
-        systemMetric
-          ? systemMetricsList.push(column)
-          : metricsList.push(column);
+        isSystem ? systemMetricsList.push(column) : metricsList.push(column);
       });
       acc = [
         ...acc,
@@ -164,8 +192,19 @@ function getRunsTableColumns(
   return columns;
 }
 
+const TagsColumn = (props: {
+  runHash: string;
+  tags: ITagInfo[];
+  onRunsTagsChange: (runHash: string, tags: ITagInfo[]) => void;
+  headerRenderer: () => React.ReactNode;
+  addTagButtonSize: 'xxSmall' | 'xSmall';
+}) => {
+  return <AttachedTagsList {...props} inlineAttachedTagsList />;
+};
+
 function runsTableRowRenderer(
   rowData: any,
+  onRunsTagsChange: (runHash: string, tags: ITagInfo[]) => void,
   groupHeaderRow = false,
   columns: string[] = [],
 ) {
@@ -183,13 +222,31 @@ function runsTableRowRenderer(
     return merge({}, rowData, row);
   } else {
     const row = {
-      experiment: rowData.experiment,
+      experiment: {
+        content: (
+          <ExperimentNameBox
+            experimentName={rowData.experiment}
+            experimentId={rowData.experimentId}
+          />
+        ),
+      },
       run: {
         content: (
           <RunNameColumn
             run={rowData.run}
             runHash={rowData.hash}
             active={rowData.active}
+          />
+        ),
+      },
+      tags: {
+        content: (
+          <TagsColumn
+            runHash={rowData.hash}
+            tags={rowData.tags}
+            onRunsTagsChange={onRunsTagsChange}
+            headerRenderer={() => <></>}
+            addTagButtonSize='xxSmall'
           />
         ),
       },

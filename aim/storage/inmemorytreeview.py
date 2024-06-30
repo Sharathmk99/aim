@@ -5,7 +5,7 @@ from aim.storage.types import AimObject, AimObjectKey, AimObjectPath
 from aim.storage.treearrayview import TreeArrayView
 from aim.storage.treeview import TreeView
 
-from typing import Any, Iterator, Tuple, Union, List
+from typing import Any, Iterator, Tuple, Union
 
 
 class InMemoryTreeView(TreeView):
@@ -91,6 +91,9 @@ class InMemoryTreeView(TreeView):
         path: Union[AimObjectKey, AimObjectPath],
         value: AimObject
     ):
+        if path == Ellipsis:
+            path = ()
+
         if isinstance(path, (int, str)):
             path = (path,)
         assert path
@@ -105,7 +108,7 @@ class InMemoryTreeView(TreeView):
     def keys_eager(
             self,
             path: Union[AimObjectKey, AimObjectPath] = (),
-    ) -> List[Union[AimObjectPath, AimObjectKey]]:
+    ):
         return list(self.subtree(path).keys())
 
     def keys(
@@ -124,10 +127,7 @@ class InMemoryTreeView(TreeView):
     def items_eager(
             self,
             path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> List[Tuple[
-        AimObjectKey,
-        AimObject
-    ]]:
+    ):
         return list(self.subtree(path).items())
 
     def items(
@@ -160,14 +160,14 @@ class InMemoryTreeView(TreeView):
     ) -> TreeArrayView:
         return TreeArrayView(self.subtree(path), dtype=dtype)
 
-    def first(
+    def first_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
+    ) -> AimObjectKey:
         ...
 
-    def last(
+    def last_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
+    ) -> AimObjectKey:
         ...

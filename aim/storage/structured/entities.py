@@ -92,6 +92,11 @@ class Run(StructuredObject, Searchable['Run']):
     def remove_tag(self, tag_name: str) -> bool:
         ...
 
+    @property
+    @abstractmethod
+    def info(self) -> 'RunInfo':
+        ...
+
 
 class Experiment(StructuredObject, Searchable['Experiment']):
     @property
@@ -107,6 +112,16 @@ class Experiment(StructuredObject, Searchable['Experiment']):
     @name.setter
     @abstractmethod
     def name(self, value: str):
+        ...
+
+    @property
+    @abstractmethod
+    def description(self) -> Optional[str]:
+        ...
+
+    @description.setter
+    @abstractmethod
+    def description(self, value: str):
         ...
 
     @property
@@ -199,6 +214,18 @@ class Note(StructuredObject, Searchable['Note']):
         ...
 
 
+class RunInfo(StructuredObject, Generic[T]):
+    @property
+    @abstractmethod
+    def last_notification_index(self) -> int:
+        ...
+
+    @last_notification_index.setter
+    @abstractmethod
+    def last_notification_index(self, value: int):
+        ...
+
+
 class ObjectFactory:
     @abstractmethod
     def runs(self) -> RunCollection:
@@ -238,6 +265,10 @@ class ObjectFactory:
 
     @abstractmethod
     def create_experiment(self, name: str) -> Experiment:
+        ...
+
+    @abstractmethod
+    def delete_experiment(self, _id: str) -> bool:
         ...
 
     @abstractmethod

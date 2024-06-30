@@ -1,4 +1,4 @@
-import { ResizeModeEnum } from 'config/enums/tableEnums';
+import { ResizeModeEnum, MetricsValueKeyEnum } from 'config/enums/tableEnums';
 
 import { AppNameEnum } from 'services/models/explorer';
 
@@ -37,8 +37,9 @@ export const SELECTION_COLUMN_WIDTH = 32;
 
 export const VIEW_PORT_OFFSET = 500;
 
-export const TABLE_DEFAULT_CONFIG = {
+export const TABLE_DEFAULT_CONFIG: Record<string, any> = {
   [AppNameEnum.RUNS]: {
+    metricsValueKey: MetricsValueKeyEnum.LAST,
     resizeMode: ResizeModeEnum.Resizable,
     rowHeight: RowHeightSize.md,
     sortFields: [],
@@ -55,6 +56,7 @@ export const TABLE_DEFAULT_CONFIG = {
     height: '0.5',
   },
   [AppNameEnum.METRICS]: {
+    metricsValueKey: MetricsValueKeyEnum.LAST,
     resizeMode: ResizeModeEnum.Resizable,
     rowHeight: RowHeightSize.md,
     sortFields: [],
@@ -70,6 +72,7 @@ export const TABLE_DEFAULT_CONFIG = {
     height: '0.5',
   },
   [AppNameEnum.PARAMS]: {
+    metricsValueKey: MetricsValueKeyEnum.LAST,
     resizeMode: ResizeModeEnum.Resizable,
     rowHeight: RowHeightSize.md,
     sortFields: [],
@@ -86,6 +89,7 @@ export const TABLE_DEFAULT_CONFIG = {
     height: '0.5',
   },
   [AppNameEnum.IMAGES]: {
+    metricsValueKey: MetricsValueKeyEnum.LAST,
     resizeMode: ResizeModeEnum.Resizable,
     rowHeight: RowHeightSize.md,
     sortFields: [],
@@ -101,6 +105,7 @@ export const TABLE_DEFAULT_CONFIG = {
     height: '0.5',
   },
   [AppNameEnum.SCATTERS]: {
+    metricsValueKey: MetricsValueKeyEnum.LAST,
     resizeMode: ResizeModeEnum.Resizable,
     rowHeight: RowHeightSize.md,
     sortFields: [],
@@ -126,3 +131,70 @@ export const AVOID_COLUMNS_TO_HIDE_LIST = new Set([
   'name',
   'context',
 ]);
+
+export const EXPLORE_SELECTED_RUNS_CONFIG: Record<string, AppNameEnum[]> = {
+  [AppNameEnum.RUNS]: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  [AppNameEnum.METRICS]: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  [AppNameEnum.PARAMS]: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  [AppNameEnum.SCATTERS]: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  [AppNameEnum.IMAGES]: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  dashboard: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  experiment: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+  run: [
+    AppNameEnum.RUNS,
+    AppNameEnum.METRICS,
+    AppNameEnum.IMAGES,
+    AppNameEnum.FIGURES,
+    AppNameEnum.AUDIOS,
+    AppNameEnum.TEXT,
+  ],
+};

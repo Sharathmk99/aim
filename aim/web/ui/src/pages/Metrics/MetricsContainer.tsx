@@ -1,13 +1,10 @@
 import React from 'react';
 import { useHistory, useRouteMatch } from 'react-router-dom';
+import { useResizeObserver, useModel, usePanelResize } from 'hooks';
 
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 
 import { ANALYTICS_EVENT_KEYS } from 'config/analytics/analyticsKeysMap';
-
-import usePanelResize from 'hooks/resize/usePanelResize';
-import useModel from 'hooks/model/useModel';
-import useResizeObserver from 'hooks/window/useResizeObserver';
 
 import metricAppModel from 'services/models/metrics/metricsAppModel';
 import * as analytics from 'services/analytics';
@@ -130,18 +127,18 @@ function MetricsContainer(): React.FunctionComponentElement<React.ReactNode> {
         panelResizing={panelResizing}
         lineChartData={metricsData?.lineChartData!}
         chartTitleData={metricsData?.chartTitleData!}
+        legendsData={metricsData?.legendsData!}
         ignoreOutliers={metricsData?.config?.chart?.ignoreOutliers!}
+        legends={metricsData?.config?.chart?.legends!}
         tableData={metricsData?.tableData!}
         sameValueColumns={metricsData?.sameValueColumns!}
         tableColumns={metricsData?.tableColumns!}
         aggregatedData={metricsData?.aggregatedData!}
         zoom={metricsData?.config?.chart?.zoom!}
-        curveInterpolation={metricsData?.config?.chart?.curveInterpolation!}
         highlightMode={metricsData?.config?.chart?.highlightMode!}
         axesScaleType={metricsData?.config?.chart?.axesScaleType!}
         axesScaleRange={metricsData?.config?.chart?.axesScaleRange!}
-        smoothingAlgorithm={metricsData?.config?.chart?.smoothingAlgorithm!}
-        smoothingFactor={metricsData?.config?.chart?.smoothingFactor!}
+        smoothing={metricsData?.config?.chart?.smoothing!}
         focusedState={metricsData?.config?.chart?.focusedState!}
         notifyData={metricsData?.notifyData!}
         tooltip={metricsData?.tooltip!}
@@ -166,7 +163,9 @@ function MetricsContainer(): React.FunctionComponentElement<React.ReactNode> {
         columnsOrder={metricsData?.config?.table?.columnsOrder!}
         // methods
         onChangeTooltip={metricAppModel.onChangeTooltip}
+        onRunsTagsChange={metricAppModel.onRunsTagsChange}
         onIgnoreOutliersChange={metricAppModel.onIgnoreOutliersChange}
+        onLegendsChange={metricAppModel.onLegendsChange}
         onZoomChange={metricAppModel.onZoomChange}
         onHighlightModeChange={metricAppModel.onHighlightModeChange}
         onSmoothingChange={metricAppModel.onSmoothingChange}

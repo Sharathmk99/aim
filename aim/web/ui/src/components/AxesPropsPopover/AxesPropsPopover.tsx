@@ -83,7 +83,7 @@ function AxesPropsPopover({
   }, [selectFormOptions]);
 
   const selected = React.useMemo(() => {
-    return alignmentConfig.type === AlignmentOptionsEnum.CUSTOM_METRIC
+    return alignmentConfig?.type === AlignmentOptionsEnum.CUSTOM_METRIC
       ? alignmentConfig.metric
       : alignmentConfig.type;
   }, [alignmentConfig]);
@@ -205,7 +205,7 @@ function AxesPropsPopover({
         <Divider className='AxesPropsPopover__divider' />
         <div className='AxesPropsPopover__range'>
           <Text component='p' tint={50} className='AxesPropsPopover__subtitle'>
-            SELECT RANGE:
+            SET AXES RANGE:
           </Text>
           <div className='AxesPropsPopover__range__container xAxis'>
             <Text size={14} className='scaleRangeInputs__label'>

@@ -7,14 +7,13 @@ const endpoints = {
   GET_EXPERIMENTS: 'experiments',
   GET_RUN_INFO: (id: string) => `runs/${id}/info`,
   GET_RUN_LOGS: (id: string) => `runs/${id}/logs`,
-  GET_RUNS_BY_EXPERIMENT_ID: (id: string) => `experiments/${id}/runs`,
   GET_RUN_METRICS_BATCH_BY_TRACES: (id: string) =>
     `runs/${id}/metric/get-batch`,
   EDIT_RUN: (id: string) => `runs/${id}`,
   ARCHIVE_RUNS: (archived: boolean) => `runs/archive-batch?archive=${archived}`,
   DELETE_RUN: (id: string) => `runs/${id}`,
   DELETE_RUNS: 'runs/delete-batch',
-  CREATE_RUNS_TAG: (id: string) => `runs/${id}/tags/new`,
+  ATTACH_RUNS_TAG: (id: string) => `runs/${id}/tags/new`,
   DELETE_RUNS_TAG: (id: string, tag_id: string) => `runs/${id}/tags/${tag_id}`,
   GET_BATCH: (id: string, trace: string) => `runs/${id}/${trace}/get-batch`,
   GET_BATCH_BY_STEP: (id: string, trace: string) =>
@@ -39,35 +38,16 @@ function getRunInfo(id: string) {
   return API.get(endpoints.GET_RUN_INFO(id));
 }
 
-function getRunsOfExperiment(
-  id: string,
-  params: { limit: number; offset?: string } = { limit: 10 },
-) {
-  return API.get(endpoints.GET_RUNS_BY_EXPERIMENT_ID(id), params);
-}
-
 function getExperimentsData() {
   return API.get(endpoints.GET_EXPERIMENTS);
 }
 
 function getRunMetricsBatch(body: any, id: string) {
-  return API.post(endpoints.GET_RUN_METRICS_BATCH_BY_TRACES(id), body, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  return API.post(endpoints.GET_RUN_METRICS_BATCH_BY_TRACES(id), body);
 }
 
 function archiveRun(id: string, archived: boolean = false) {
-  return API.put(
-    endpoints.EDIT_RUN(id),
-    { archived },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    },
-  );
+  return API.put(endpoints.EDIT_RUN(id), { archived });
 }
 
 function editRunNameAndDescription(
@@ -76,55 +56,27 @@ function editRunNameAndDescription(
   description: string,
   archived: boolean,
 ) {
-  return API.put(
-    endpoints.EDIT_RUN(id),
-    { name, description, archived },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    },
-  );
+  return API.put(endpoints.EDIT_RUN(id), { name, description, archived });
 }
 
 function archiveRuns(ids: string[], archived: boolean = false) {
-  return API.post(endpoints.ARCHIVE_RUNS(archived), ids, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  return API.post(endpoints.ARCHIVE_RUNS(archived), ids);
 }
 
 function deleteRun(id: string) {
-  return API.delete(endpoints.DELETE_RUN(id), {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  return API.delete(endpoints.DELETE_RUN(id));
 }
 
 function deleteRuns(ids: string[]) {
-  return API.post(endpoints.DELETE_RUNS, ids, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  return API.post(endpoints.DELETE_RUNS, ids);
 }
 
-function createRunsTag(body: object, run_id: string) {
-  return API.post(endpoints.CREATE_RUNS_TAG(run_id), body, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+function attachRunsTag(body: object, run_id: string) {
+  return API.post(endpoints.ATTACH_RUNS_TAG(run_id), body);
 }
 
 function deleteRunsTag(run_id: string, tag_id: string) {
-  return API.delete(endpoints.DELETE_RUNS_TAG(run_id, tag_id), {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  return API.delete(endpoints.DELETE_RUNS_TAG(run_id, tag_id));
 }
 
 function getBatch(run_id: string, trace: TraceType, params: any, body: any) {
@@ -133,9 +85,6 @@ function getBatch(run_id: string, trace: TraceType, params: any, body: any) {
     params,
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body,
     },
   );
@@ -152,9 +101,6 @@ function getBatchByStep(
     params,
     {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body,
     },
   );
@@ -169,10 +115,9 @@ const runsService = {
   getRunLogs,
   getRunMetricsBatch,
   getExperimentsData,
-  getRunsOfExperiment,
   archiveRun,
   deleteRun,
-  createRunsTag,
+  attachRunsTag,
   deleteRunsTag,
   archiveRuns,
   deleteRuns,

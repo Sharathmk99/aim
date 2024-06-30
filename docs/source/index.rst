@@ -27,6 +27,7 @@
    ui/pages/home_page.md
    ui/pages/run_management.md
    ui/pages/explorers.md
+   ui/pages/table.md
    ui/pages/bookmarks.md
    ui/pages/tags.md
 
@@ -41,6 +42,11 @@
    using/query_runs.md
    using/search.md
    using/remote_tracking.md
+   using/training_monitoring.md
+   using/logging.md
+   using/artifacts.md
+   using/notifications.md
+   using/callbacks.md
    using/k8s_deployment.md
    using/jupyter_notebook_ui.md
    using/sagemaker_notebook_ui.md
@@ -81,7 +87,6 @@
    :name: community
    :caption: Community
 
-   community/telemetry.md
    generated/CHANGELOG.md
 
 .. raw:: html

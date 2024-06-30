@@ -1,9 +1,8 @@
 import React from 'react';
 
-import { CircularProgress } from '@material-ui/core';
-
 import Table from 'components/Table/Table';
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
+import { Spinner } from 'components/kit';
 
 import { RequestStatusEnum } from 'config/enums/requestStatusEnum';
 import { Request_Illustrations } from 'config/illustrationConfig/illustrationConfig';
@@ -38,6 +37,8 @@ function RunsTable({
   requestStatus,
   onToggleColumnsColorScales,
   columnsColorScales,
+  metricsValueKey,
+  onMetricsValueKeyChange,
 }: IRunsTableProps): React.FunctionComponentElement<React.ReactNode> {
   const getLatestRunsDataRequestRef = React.useRef<any>(null);
   React.useEffect(() => {
@@ -73,12 +74,14 @@ function RunsTable({
             multiSelect
             // Table options
             topHeader
+            metricsValueKey={metricsValueKey}
             rowHeight={tableRowHeight}
             hiddenColumns={hiddenColumns}
             hideSystemMetrics={hideSystemMetrics}
             columnsOrder={columnsOrder}
             columnsWidths={columnsWidths}
             // Table actions
+            onMetricsValueKeyChange={onMetricsValueKeyChange}
             onManageColumns={onManageColumns}
             onColumnsVisibilityChange={onColumnsVisibilityChange}
             onTableDiffShow={onTableDiffShow}
@@ -98,7 +101,7 @@ function RunsTable({
         </div>
         {isInfiniteLoading && (
           <div className='Infinite_Loader'>
-            <CircularProgress />
+            <Spinner />
           </div>
         )}
       </div>

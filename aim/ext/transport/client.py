@@ -1,174 +1,298 @@
+import requests
+import base64
+import logging
 import os
-import uuid
-from copy import deepcopy
 import threading
+import uuid
+import weakref
+
+from copy import deepcopy
 from typing import Tuple
-from collections import defaultdict
-import aim.ext.transport.remote_tracking_pb2 as rpc_messages
-import aim.ext.transport.remote_tracking_pb2_grpc as remote_tracking_pb2_grpc
+from websockets.sync.client import connect
 
-from aim.ext.transport.message_utils import pack_stream, unpack_stream, raise_exception
-from aim.ext.transport.rpc_queue import RpcQueueWithRetry
-from aim.ext.transport.heartbeat import RPCHeartbeatSender
-from aim.ext.transport.config import (
-    AIM_CLIENT_SSL_CERTIFICATES_FILE,
-    AIM_RT_MAX_MESSAGE_SIZE,
-    AIM_RT_DEFAULT_MAX_MESSAGE_SIZE,
-    AIM_CLIENT_QUEUE_MAX_MEMORY,
+from aim.ext.transport.utils import handle_exception
+from aim.ext.transport.message_utils import (
+    raise_exception,
+    pack_args,
+    unpack_stream,
+    unpack_args,
+    encode_tree,
+    decode_tree
 )
-from aim.storage.treeutils import encode_tree, decode_tree
+from aim.ext.transport.request_queue import RequestQueue
+from aim.ext.transport.heartbeat import HeartbeatSender
 
-
+AIM_CLIENT_QUEUE_MAX_MEMORY = '__AIM_CLIENT_QUEUE_MAX_MEMORY__'
 DEFAULT_RETRY_INTERVAL = 0.1  # 100 ms
-DEFAULT_RETRY_COUNT = 1
+DEFAULT_RETRY_COUNT = 2
+
+logger = logging.getLogger(__name__)
 
 
 class Client:
     _thread_local = threading.local()
 
-    # per run queues. based on run's hash
-    _queues = defaultdict(lambda: RpcQueueWithRetry(
-        'remote_tracker', max_queue_memory=os.getenv(AIM_CLIENT_QUEUE_MAX_MEMORY, 1024 * 1024 * 1024),
-        retry_count=DEFAULT_RETRY_COUNT, retry_interval=DEFAULT_RETRY_INTERVAL))
-
     def __init__(self, remote_path: str):
-        # temporary workaround for M1 build
-        import grpc
-
         self._id = str(uuid.uuid4())
+        if remote_path.endswith('/'):
+            remote_path = remote_path[:-1]
+        self._remote_path = remote_path
 
-        ssl_certfile = os.getenv(AIM_CLIENT_SSL_CERTIFICATES_FILE)
-        msg_max_size = int(os.getenv(AIM_RT_MAX_MESSAGE_SIZE, AIM_RT_DEFAULT_MAX_MESSAGE_SIZE))
-        options = [
-            ('grpc.max_send_message_length', msg_max_size),
-            ('grpc.max_receive_message_length', msg_max_size)
-        ]
+        self._http_protocol = 'http://'
+        self._ws_protocol = 'ws://'
+        self.request_headers = {}
+        self.protocol_probe()
 
-        if ssl_certfile:
-            with open(ssl_certfile, 'rb') as f:
-                root_certificates = grpc.ssl_channel_credentials(f.read())
-            self._remote_channel = grpc.secure_channel(remote_path, root_certificates, options=options)
-        else:
-            self._remote_channel = grpc.insecure_channel(remote_path, options=options)
+        self._resource_pool = weakref.WeakValueDictionary()
 
-        self._remote_stub = remote_tracking_pb2_grpc.RemoteTrackingServiceStub(self._remote_channel)
-        self._heartbeat_sender = RPCHeartbeatSender(self)
-        self._heartbeat_sender.start()
-        self._thread_local.atomic_instructions = None
+        self._client_endpoint = f'{self.remote_path}/client'
+        self._tracking_endpoint = f'{self.remote_path}/tracking'
+        self.connect()
 
-    def health_check(self, health_check_type='heartbeat'):
-        request = rpc_messages.HealthCheckRequest(
-            client_uri=self.uri,
-            check_type=health_check_type,
+        self._queue = RequestQueue(
+            f'remote_tracker_{self._id}',
+            max_queue_memory=os.getenv(AIM_CLIENT_QUEUE_MAX_MEMORY, 1024 * 1024 * 1024),
+            retry_count=DEFAULT_RETRY_COUNT,
+            retry_interval=DEFAULT_RETRY_INTERVAL
         )
-        response = self.remote.health_check(request)
+        self._heartbeat_sender = HeartbeatSender(self)
+        self._heartbeat_sender.start()
+        self._thread_local.atomic_instructions = {}
+        self._ws = None
+
+    def protocol_probe(self):
+        endpoint = f'http://{self.remote_path}/status/'
+        try:
+            response = requests.get(endpoint, headers=self.request_headers)
+            if response.status_code == 200:
+                if response.url.startswith('https://'):
+                    self._http_protocol = 'https://'
+                    self._ws_protocol = 'wss://'
+                    return
+        except Exception:
+            pass
+
+        endpoint = f'https://{self.remote_path}/status/'
+        try:
+            response = requests.get(endpoint, headers=self.request_headers)
+            if response.status_code == 200:
+                self._http_protocol = 'https://'
+                self._ws_protocol = 'wss://'
+        except Exception:
+            pass
+
+    def reinitialize_resource(self, handler):
+        # write some request to get a resource on server side with an already given handler
+        resource = self._resource_pool[handler]
+        self.get_resource_handler(resource, resource.resource_type, handler, resource.init_args)
+
+    def _reinitialize_all_resources(self):
+        handlers_list = list(self._resource_pool.keys())
+        for handler in handlers_list:
+            self.reinitialize_resource(handler)
+
+    @handle_exception(requests.ConnectionError,
+                      error_message='Failed to connect to Aim Server. Have you forgot to run `aim server` command?')
+    def _check_remote_version_compatibility(self):
+        from aim.__version__ import __version__ as client_version
+
+        error_message_template = 'The Aim Remote tracking server version ({}) '\
+                                 'is not compatible with the Aim client version ({}).'\
+                                 'Please upgrade either the Aim Client or the Aim Remote.'
+
+        warning_message_template = 'The Aim Remote tracking server version ({}) ' \
+                                   'and the Aim client version ({}) do not match.' \
+                                   'Consider upgrading either the client or remote tracking server.'
+
+        remote_version = self.get_version()
+
+        # server doesn't yet have the `get_version()` method implemented
+        if remote_version == '<3.19.0':
+            RuntimeError(error_message_template.format(remote_version, client_version))
+
+        # compare versions
+        if client_version == remote_version:
+            return
+
+        # if the server has a newer version always force to upgrade the client
+        if client_version < remote_version:
+            raise RuntimeError(error_message_template.format(remote_version, client_version))
+
+        # for other mismatching versions throw a warning for now
+        logger.warning(warning_message_template.format(remote_version, client_version))
+        # further incompatibility list will be added manually
+
+    def client_heartbeat(self):
+        endpoint = f'{self._http_protocol}{self._client_endpoint}/heartbeat/{self.uri}/'
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code != 200:
+            raise_exception(response_json.get('message'))
+
+        return response
+
+    @handle_exception(requests.ConnectionError,
+                      error_message='Failed to connect to Aim Server. Have you forgot to run `aim server` command?')
+    def connect(self):
+        endpoint = f'{self._http_protocol}{self._client_endpoint}/connect/{self.uri}/'
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code != 200:
+            raise_exception(response_json.get('message'))
+
+        return response
+
+    def reconnect(self):
+        endpoint = f'{self._http_protocol}{self._client_endpoint}/reconnect/{self.uri}/'
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code != 200:
+            raise_exception(response_json.get('message'))
+
+        self.refresh_ws()
+        self._reinitialize_all_resources()
+
+        return response
+
+    def disconnect(self):
+        self._heartbeat_sender.stop()
+        if self._ws:
+            self._ws.close()
+
+        endpoint = f'{self._http_protocol}{self._client_endpoint}/disconnect/{self.uri}/'
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code != 200:
+            raise_exception(response_json.get('message'))
+
         return response
 
     def get_version(self,):
-        request = rpc_messages.VersionRequest()
-        response = self.remote.get_version(request)
+        endpoint = f'{self._http_protocol}{self._client_endpoint}/get-version/'
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code == 404:
+            return '<3.19.0'
+        if response.status_code == 400:
+            raise_exception(response_json.get('exception'))
+        return response_json.get('version')
 
-        if response.status == rpc_messages.ResourceResponse.Status.ERROR:
-            raise_exception(response.exception)
-        return response.version
+    def get_resource_handler(self, resource, resource_type, handler='', args=()):
+        endpoint = f'{self._http_protocol}{self._tracking_endpoint}/{self.uri}/get-resource/'
 
-    def get_resource_handler(self, resource_type, args=()):
-        request = rpc_messages.ResourceRequest(
-            resource_type=resource_type,
-            client_uri=self.uri,
-            args=args
-        )
-        response = self.remote.get_resource(request)
-        if response.status == rpc_messages.ResourceResponse.Status.ERROR:
-            raise_exception(response.exception)
-        return response.handler
+        request_data = {
+            'resource_handler': handler,
+            'resource_type': resource_type,
+            'args': base64.b64encode(args).decode()
+        }
 
-    def release_resource(self, resource_handler):
-        request = rpc_messages.ReleaseResourceRequest(
-            handler=resource_handler,
-            client_uri=self.uri
-        )
-        response = self.remote.release_resource(request)
-        if response.status == rpc_messages.ReleaseResourceResponse.Status.ERROR:
-            raise_exception(response.exception)
+        response = requests.post(endpoint, json=request_data, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code == 400:
+            raise_exception(response_json.get('exception'))
+        elif response.status_code != 200:
+            raise (Exception(response_json))
+
+        handler = response_json.get('handler')
+        self._resource_pool[handler] = resource
+
+        return handler
+
+    def release_resource(self, queue_id, resource_handler):
+        endpoint = f'{self._http_protocol}{self._tracking_endpoint}/{self.uri}/release-resource/{resource_handler}/'
+        if queue_id != -1:
+            self.get_queue().wait_for_finish()
+
+        response = requests.get(endpoint, headers=self.request_headers)
+        response_json = response.json()
+        if response.status_code == 400:
+            raise_exception(response_json.get('exception'))
+
+        del self._resource_pool[resource_handler]
 
     def run_instruction(self, queue_id, resource, method, args=(), is_write_only=False):
         args = deepcopy(args)
 
         # self._thread_local can be empty in the 'clean up' phase.
-        if getattr(self._thread_local, 'atomic_instructions', None) is not None:
-            assert is_write_only
-            self._thread_local.atomic_instructions.append((resource, method, args))
-            return
 
         if is_write_only:
-            self.get_queue(queue_id).register_task(
-                self._run_write_instructions, list(encode_tree([(resource, method, args)])))
+            assert queue_id != -1
+            if getattr(self._thread_local, 'atomic_instructions', None) is not None and \
+                    self._thread_local.atomic_instructions.get(queue_id, None) is not None:
+                self._thread_local.atomic_instructions[queue_id].append((resource, method, args))
+                return
+
+            self.get_queue().register_task(
+                self,
+                self._run_write_instructions, list(encode_tree([(resource, method, args)], strict=False)))
             return
 
         return self._run_read_instructions(queue_id, resource, method, args)
 
     def _run_read_instructions(self, queue_id, resource, method, args):
-        def message_stream_generator():
-            header = rpc_messages.InstructionRequest(
-                header=rpc_messages.RequestHeader(
-                    version='0.1',
-                    handler=resource,
-                    client_uri=self.uri,
-                    method_name=method
-                )
-            )
-            yield header
+        endpoint = f'{self._http_protocol}{self._tracking_endpoint}/{self.uri}/read-instruction/'
 
-            stream = pack_stream(encode_tree(args))
-            for chunk in stream:
-                yield rpc_messages.InstructionRequest(message=chunk)
+        request_data = {
+            'resource_handler': resource,
+            'method_name': method,
+            'args': base64.b64encode(pack_args(encode_tree(args))).decode()
+        }
 
-        self.get_queue(queue_id).wait_for_finish()
-        resp = self.remote.run_instruction(message_stream_generator())
-        status_msg = next(resp)
+        if queue_id != -1:
+            self.get_queue().wait_for_finish()
 
-        assert status_msg.WhichOneof('instruction') == 'header'
-        if status_msg.header.status == rpc_messages.ResponseHeader.Status.ERROR:
-            raise_exception(status_msg.header.exception)
-        return decode_tree(unpack_stream(resp))
+        response = requests.post(endpoint, json=request_data, stream=True, headers=self.request_headers)
+
+        if response.status_code == 400:
+            raise_exception(response.json().get('exception'))
+        return decode_tree(unpack_stream(response.iter_content(chunk_size=None)))
 
     def _run_write_instructions(self, instructions: [Tuple[bytes, bytes]]):
-        stream = pack_stream(iter(instructions))
+        msg = pack_args(iter(instructions))
 
-        def message_stream_generator():
-            for chunk in stream:
-                yield rpc_messages.WriteInstructionsRequest(
-                    version='0.1',
-                    client_uri=self.uri,
-                    message=chunk
-                )
+        self.ws.send(msg)
 
-        response = self.remote.run_write_instructions(message_stream_generator())
-        if response.status == rpc_messages.WriteInstructionsResponse.Status.ERROR:
-            raise_exception(response.header.exception)
-
-    def start_instructions_batch(self):
-        self._thread_local.atomic_instructions = []
-
-    def flush_instructions_batch(self, queue_id):
-        if self._thread_local.atomic_instructions is None:
+        response = self.ws.recv()
+        if response == b'OK':
             return
 
-        self.get_queue(queue_id).register_task(
-            self._run_write_instructions, list(encode_tree(self._thread_local.atomic_instructions)))
-        self._thread_local.atomic_instructions = None
+        response_json = decode_tree(unpack_args(response))
+        raise_exception(response_json)
+
+    def start_instructions_batch(self, hash_):
+        if getattr(self._thread_local, 'atomic_instructions', None) is None:
+            self._thread_local.atomic_instructions = {}
+        self._thread_local.atomic_instructions[hash_] = []
+
+    def flush_instructions_batch(self, hash_):
+        if self._thread_local.atomic_instructions.get(hash_) is None:
+            return
+
+        self.get_queue().register_task(
+            self,
+            self._run_write_instructions, list(encode_tree(self._thread_local.atomic_instructions[hash_])))
+        del self._thread_local.atomic_instructions[hash_]
+
+    def refresh_ws(self):
+        self._ws = connect(f'{self._ws_protocol}{self._tracking_endpoint}/{self.uri}/write-instruction/',
+                           max_size=None)
 
     @property
-    def remote(self):  # access to low-level interface
-        return self._remote_stub
+    def ws(self):
+        if self._ws is None:
+            self._ws = connect(f'{self._ws_protocol}{self._tracking_endpoint}/{self.uri}/write-instruction/',
+                               additional_headers=self.request_headers,
+                               max_size=None)
+
+        return self._ws
 
     @property
     def uri(self):
         return self._id
 
-    def get_queue(self, queue_id):
-        return self._queues[queue_id]
+    @property
+    def remote_path(self):
+        return self._remote_path
 
-    def remove_queue(self, queue_id):
-        del self._queues[queue_id]
+    def get_queue(self):
+        return self._queue

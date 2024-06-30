@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from parameterized import parameterized
 
-from tests.base import PrefilledDataApiTestBase
+from tests.base import PrefilledDataApiTestBase, ApiTestBase
 from tests.utils import decode_encoded_tree_stream
 
 from aim.storage.treeutils import decode_tree
@@ -13,25 +13,27 @@ class TestRunApi(PrefilledDataApiTestBase):
     def test_search_runs_api(self):
         client = self.client
 
-        response = client.get('/api/runs/search/run/', params={'q': 'run["name"] == "Run # 3"',
+        query = self.isolated_query_patch('run["name"] == "Run # 3"')
+        response = client.get('/api/runs/search/run/', params={'q': query,
                                                                'report_progress': False})
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=512*1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=512*1024)))
         self.assertEqual(1, len(decoded_response))
         for _, run in decoded_response.items():
             self.assertEqual(4, len(run['traces']['metric']))
             for trace in run['traces']['metric']:
-                self.assertAlmostEqual(0.99, trace['last_value']['last'])
+                self.assertAlmostEqual(0.99, trace['values']['last'])
 
     def test_search_runs_api_paginated(self):
         client = self.client
 
-        response = client.get('/api/runs/search/run/', params={'q': 'run["name"] in ["Run # 2","Run # 3"]',
+        query = self.isolated_query_patch('run["name"] in ["Run # 2","Run # 3"]')
+        response = client.get('/api/runs/search/run/', params={'q': query,
                                                                'limit': 1, 'report_progress': False})
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=1024 * 1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=1024 * 1024)))
         self.assertEqual(1, len(decoded_response))
 
         offset = ''
@@ -39,13 +41,14 @@ class TestRunApi(PrefilledDataApiTestBase):
             offset = run_hash
             self.assertEqual('Run # 3', run['props']['name'])
 
-        response = client.get('/api/runs/search/run/', params={'q': 'run["name"] in ["Run # 2","Run # 3"]',
+        query = self.isolated_query_patch('run["name"] in ["Run # 2","Run # 3"]')
+        response = client.get('/api/runs/search/run/', params={'q': query,
                                                                'limit': 5,
                                                                'offset': offset,
                                                                'report_progress': False})
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=1024 * 1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=1024 * 1024)))
         self.assertEqual(1, len(decoded_response))
         for run_hash, run in decoded_response.items():
             self.assertEqual('Run # 2', run['props']['name'])
@@ -53,11 +56,12 @@ class TestRunApi(PrefilledDataApiTestBase):
     def test_search_metrics_api_default_step(self):
         client = self.client
 
-        response = client.get('/api/runs/search/metric/', params={'q': 'run["name"] == "Run # 3"',
+        query = self.isolated_query_patch('run["name"] == "Run # 3"')
+        response = client.get('/api/runs/search/metric/', params={'q': query,
                                                                   'report_progress': False})
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=512*1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=512*1024)))
         for run in decoded_response.values():
             for trace in run['traces']:
                 self.assertEqual([0, 0, 50], trace['slice'])
@@ -79,12 +83,13 @@ class TestRunApi(PrefilledDataApiTestBase):
     def test_search_metrics_api_custom_step(self, step_count):
         client = self.client
 
-        response = client.get('/api/runs/search/metric/', params={'q': 'run["name"] == "Run # 3"',
+        query = self.isolated_query_patch('run["name"] == "Run # 3"')
+        response = client.get('/api/runs/search/metric/', params={'q': query,
                                                                   'p': step_count,
                                                                   'report_progress': False})
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=512*1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=512*1024)))
         for run in decoded_response.values():
             for trace in run['traces']:
                 self.assertEqual([0, 0, step_count], trace['slice'])
@@ -116,7 +121,7 @@ class TestRunApi(PrefilledDataApiTestBase):
         })
         self.assertEqual(200, response.status_code)
 
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=512*1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=512*1024)))
         self.assertEqual(2, len(decoded_response))
         self.assertListEqual(run_hashes, list(decoded_response.keys()))
         self.assertEqual([], decoded_response[run_hashes[1]])
@@ -143,7 +148,7 @@ class TestRunApi(PrefilledDataApiTestBase):
             }]
         })
         self.assertEqual(200, response.status_code)
-        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_content(chunk_size=1024 * 1024)))
+        decoded_response = decode_tree(decode_encoded_tree_stream(response.iter_bytes(chunk_size=1024 * 1024)))
         self.assertEqual(2, len(decoded_response))
         for run in decoded_response.values():
             self.assertEqual([], run)
@@ -197,6 +202,42 @@ class TestRunApi(PrefilledDataApiTestBase):
     def _find_run_by_name(self, name: str) -> Run:
         repo = self.repo
         for run in repo.iter_runs():
-            if run.name == name or run['name'] == name:
+            if run.name == name or run.get('name') == name:
                 return run
         return None
+
+
+class TestRunInfoApi(ApiTestBase):
+    @pytest.mark.gh_2267
+    def test_run_info_api_with_tags(self):
+        """covers https://github.com/aimhubio/aim/issues/2267"""
+        run = Run(system_tracking_interval=None)
+        run.add_tag('Best Run')
+        run.close()
+
+        client = self.client
+        response = client.get(f'/api/runs/{run.hash}/info/')
+        self.assertEqual(200, response.status_code)
+
+        data = response.json()
+        run_props = data['props']
+
+        self.assertEqual(1, len(run_props['tags']))
+        self.assertEqual('Best Run', run_props['tags'][0]['name'])
+        self.assertIsNone(run_props['tags'][0]['color'])
+        self.assertIsNone(run_props['tags'][0]['description'])
+        tag_id = run_props['tags'][0]['id']
+
+        # Edit tag
+        tag = self.repo.structured_db.find_tag(tag_id)
+        tag.description = 'Long description for tag'
+
+        response = client.get(f'/api/runs/{run.hash}/info/')
+        self.assertEqual(200, response.status_code)
+
+        data = response.json()
+        run_props = data['props']
+
+        self.assertEqual(1, len(run_props['tags']))
+        self.assertEqual('Long description for tag', run_props['tags'][0]['description'])
+

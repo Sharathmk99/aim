@@ -16,7 +16,7 @@ class ManagerActionStatuses(enum.Enum):
 
 class ManagerActionResult:
     """
-        Object to returned by manager action
+        Object returned by manager action
         If status is ManagerActionStatuses.Failed the info dict should have a message property
         If status is ManagerActionStatuses.Succeed the info dict should have required properties for the specific action
         @TODO add type checking for info fields
@@ -27,15 +27,31 @@ class ManagerActionResult:
 
 
 def run_up(args):
-    args_list = []
+    def check_startup_success():
+        import requests
+        server_path = 'http://{}:{}{}'.format(args['--host'], args['--port'], args['--base-path'])
+        status_api = f'{server_path}/api/projects/status'
+        retry_count = 5
+        sleep_interval = 1
+        for _ in range(retry_count):
+            try:
+                response = requests.get(status_api)
+                if response.status_code == 200:
+                    return True
+            except Exception:
+                pass
+            sleep_interval += 1
+            time.sleep(sleep_interval)
+
+        return False
+
+    args_list = ['--log-level=error']
     for p in args.keys():
         if p != '--proxy-url':
             args_list.append(p + '=' + args[p])
 
-    success_msg = 'Open http://{}:{}{}'.format(args['--host'], args['--port'], args['--base-path'])
-
     child_process = subprocess.Popen(
-        ['aim', UP_NAME] + args_list + ['--force-init'],
+        ['aim', UP_NAME] + args_list,
         stderr=subprocess.PIPE,
         stdout=subprocess.PIPE
     )
@@ -45,30 +61,26 @@ def run_up(args):
         'host': 'http://' + args['--host']
     }
 
+    if check_startup_success():
+        return ManagerActionResult(
+            ManagerActionStatuses.Succeed,
+            info
+        )
+
     for line in child_process.stderr:
-        # @TODO improve this solution
-        #  The child process `aim cli` has an incompatible things inside
-        #  that's the reason to find this way to get result from the process
         if ERROR_MSG_PREFIX in line.decode():
             return ManagerActionResult(
                 ManagerActionStatuses.Failed,
                 {'message': line.decode()}
             )
-        else:
-            if success_msg in line.decode():
-                time.sleep(2)
-                return ManagerActionResult(
-                    ManagerActionStatuses.Succeed,
-                    info
-                )
-            else:
-                return ManagerActionResult(
-                    ManagerActionStatuses.Failed,
-                    {
-                        'message': '\nPerhaps this is a bug from aim side.'
-                                   '\nPlease open an issue https://github.com/aimhubio/aim/issues.'
-                    }
-                )
+
+    return ManagerActionResult(
+        ManagerActionStatuses.Failed,
+        {
+            'message': '\nPerhaps this is a bug from aim side.'
+                       '\nPlease open an issue https://github.com/aimhubio/aim/issues.'
+        }
+    )
 
 
 def run_version(args):

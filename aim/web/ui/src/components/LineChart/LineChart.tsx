@@ -1,15 +1,15 @@
-import React from 'react';
+import * as React from 'react';
 import classNames from 'classnames';
+import { useResizeObserver } from 'hooks';
 
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 
 import { RENDER_LINES_OPTIMIZED_LIMIT } from 'config/charts';
 
-import useResizeObserver from 'hooks/window/useResizeObserver';
-
 import {
   IAttributesRef,
   ILineChartProps,
+  ILineChartRef,
 } from 'types/components/LineChart/LineChart';
 import { IFocusedState } from 'types/services/models/metrics/metricsAppModel';
 
@@ -22,42 +22,51 @@ import {
   drawBrush,
   drawHoverAttributes,
   drawUnableToRender,
+  CurveEnum,
+  HighlightEnum,
+  ScaleEnum,
 } from 'utils/d3';
 
 import './LineChart.scss';
 
 const LineChart = React.forwardRef(function LineChart(
   props: ILineChartProps,
-  ref,
+  ref: React.ForwardedRef<ILineChartRef>,
 ): React.FunctionComponentElement<React.ReactNode> {
   const {
     data,
-    index = 0,
+    index,
+    id = `${index}`,
     nameKey = '',
     aggregatedData,
     aggregationConfig,
     syncHoverState,
-    axesScaleType,
     axesScaleRange,
-    ignoreOutliers,
+    ignoreOutliers = false,
     alignmentConfig,
-    highlightMode,
-    curveInterpolation,
+    highlightMode = HighlightEnum.Off,
+    curveInterpolation = CurveEnum.Linear,
     chartTitle,
     zoom,
     onZoomChange,
-    readOnly = false,
     resizeMode,
-  } = props;
-
-  // boxes
-  const visBoxRef = React.useRef({
-    margin: {
+    onMount,
+    axesScaleType = {
+      xAxis: ScaleEnum.Linear,
+      yAxis: ScaleEnum.Linear,
+    },
+    readOnly = false,
+    margin = {
       top: 30,
       right: 20,
       bottom: 30,
       left: 60,
     },
+  } = props;
+
+  // boxes
+  const visBoxRef = React.useRef({
+    margin,
     height: 0,
     width: 0,
   });
@@ -89,10 +98,25 @@ const LineChart = React.forwardRef(function LineChart(
   const rafIDRef = React.useRef<number>();
 
   const unableToDrawConditions: { condition: boolean; text?: string }[] = [];
+  const updateDeps = [
+    data,
+    zoom,
+    ignoreOutliers,
+    highlightMode,
+    axesScaleType,
+    axesScaleRange,
+    curveInterpolation,
+    aggregationConfig,
+    readOnly,
+    alignmentConfig,
+    resizeMode,
+    id,
+  ];
 
   function draw() {
     drawArea({
       index,
+      id,
       nameKey,
       visBoxRef,
       plotBoxRef,
@@ -136,7 +160,7 @@ const LineChart = React.forwardRef(function LineChart(
     });
 
     drawLines({
-      index,
+      id,
       processedData,
       nameKey,
       linesNodeRef,
@@ -150,7 +174,9 @@ const LineChart = React.forwardRef(function LineChart(
       readOnly,
     });
 
-    // render lines with low quality if lines count are more than 'RENDER_LINES_OPTIMIZED_LIMIT'
+    /**
+     * render lines with low quality if lines count are more than 'RENDER_LINES_OPTIMIZED_LIMIT'
+     */
     if (!readOnly && linesNodeRef.current) {
       const linesCount = linesNodeRef.current.selectChildren().size();
       if (linesCount > RENDER_LINES_OPTIMIZED_LIMIT) {
@@ -158,11 +184,32 @@ const LineChart = React.forwardRef(function LineChart(
       }
     }
 
+    drawBrush({
+      id,
+      plotBoxRef,
+      plotNodeRef,
+      visBoxRef,
+      axesRef,
+      attributesRef,
+      linesRef,
+      svgNodeRef,
+      axesScaleType,
+      min,
+      max,
+      axesScaleRange,
+      zoom,
+      onZoomChange,
+      readOnly,
+      unableToDrawConditions,
+    });
+
     if (!readOnly) {
       drawHoverAttributes({
         index,
+        id,
         nameKey,
         data,
+        processedData,
         axesScaleType,
         highlightMode,
         syncHoverState,
@@ -181,25 +228,6 @@ const LineChart = React.forwardRef(function LineChart(
         alignmentConfig,
       });
     }
-
-    drawBrush({
-      index,
-      plotBoxRef,
-      plotNodeRef,
-      visBoxRef,
-      axesRef,
-      attributesRef,
-      linesRef,
-      svgNodeRef,
-      axesScaleType,
-      min,
-      max,
-      axesScaleRange,
-      zoom,
-      onZoomChange,
-      readOnly,
-      unableToDrawConditions,
-    });
 
     drawUnableToRender({
       renderArr: unableToDrawConditions,
@@ -222,19 +250,7 @@ const LineChart = React.forwardRef(function LineChart(
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      data,
-      zoom,
-      ignoreOutliers,
-      highlightMode,
-      axesScaleType,
-      axesScaleRange,
-      curveInterpolation,
-      aggregationConfig,
-      readOnly,
-      alignmentConfig,
-      resizeMode,
-    ],
+    updateDeps,
   );
 
   const observerReturnCallback = React.useCallback(() => {
@@ -246,6 +262,10 @@ const LineChart = React.forwardRef(function LineChart(
   useResizeObserver(resizeObserverCallback, parentRef, observerReturnCallback);
 
   React.useEffect(() => {
+    attributesRef.current.currentXValue = undefined;
+  }, [alignmentConfig, data]);
+
+  React.useEffect(() => {
     rafIDRef.current = window.requestAnimationFrame(renderChart);
     return () => {
       if (rafIDRef.current) {
@@ -253,19 +273,14 @@ const LineChart = React.forwardRef(function LineChart(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    data,
-    zoom,
-    ignoreOutliers,
-    highlightMode,
-    axesScaleType,
-    axesScaleRange,
-    curveInterpolation,
-    aggregationConfig,
-    readOnly,
-    alignmentConfig,
-    resizeMode,
-  ]);
+  }, updateDeps);
+
+  React.useEffect(() => {
+    if (typeof onMount === 'function') {
+      onMount();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     setActiveLineAndCircle: (
@@ -286,13 +301,19 @@ const LineChart = React.forwardRef(function LineChart(
       attributesRef.current.clearHoverAttributes?.();
     },
     setFocusedState: (focusedState: IFocusedState) => {
-      attributesRef.current.focusedState = focusedState;
+      if (focusedState) {
+        attributesRef.current.focusedState = {
+          ...focusedState,
+          visId: focusedState.visId ?? `${focusedState.chartIndex}`,
+        };
+      }
     },
   }));
 
   return (
     <ErrorBoundary>
       <div
+        id={'vis-' + id}
         ref={parentRef}
         className={classNames('LineChart', {
           zoomMode: !readOnly && zoom?.active,

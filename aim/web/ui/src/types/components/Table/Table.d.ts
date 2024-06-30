@@ -2,6 +2,7 @@ import React from 'react';
 
 import { RowHeight, RowHeightSize } from 'config/table/tableConfigs';
 import {
+  MetricsValueKeyEnum,
   ResizeModeEnum,
   VisualizationElementEnum,
 } from 'config/enums/tableEnums';
@@ -21,6 +22,7 @@ export interface ITableProps {
   columns: any[];
   sameValueColumns?: string[] | [];
   height?: string;
+  metricsValueKey?: MetricsValueKeyEnum;
   rowHeight?: RowHeight;
   estimatedRowHeight?: number;
   onManageColumns?: (order: IColumnsOrderData) => void;
@@ -32,6 +34,7 @@ export interface ITableProps {
   onRowsChange?: (keys: string[]) => void;
   onExport?: (e: React.ChangeEvent<any>) => void;
   onRowHeightChange?: (height: RowHeightSize) => void;
+  onMetricsValueKeyChange?: (key: MetricsValueKeyEnum) => void;
   onTableResizeModeChange?: IMetricProps['onTableResizeModeChange'];
   navBarItems?: {
     name: string;
@@ -72,13 +75,13 @@ export interface ITableProps {
   deleteRuns?: (ids: string[]) => void;
   onRowsVisibilityChange?: (keys: string[]) => void;
   onToggleColumnsColorScales?: (colKey: string) => void;
-  className?: string;
   appName?: AppNameEnum;
   focusedState?: any;
   illustrationConfig?: IIllustrationConfig;
   disableRowClick?: boolean;
   columnsColorScales?: { [key: string]: boolean };
   visualizationElementType?: VisualizationElementEnum;
+  noColumnActions?: boolean;
 }
 
 export interface ITableRef {
@@ -104,4 +107,5 @@ export interface IIllustrationConfig {
   type?: IIllustrationBlockProps['type'];
   title?: IIllustrationBlockProps['title'];
   content?: IIllustrationBlockProps['content'];
+  showImage?: IIllustrationBlockProps['showImage'];
 }

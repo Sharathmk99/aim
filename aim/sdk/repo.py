@@ -5,8 +5,8 @@ import logging
 from collections import defaultdict
 from contextlib import contextmanager
 from enum import Enum
-
-from typing import Dict, Tuple, Iterator, NamedTuple, Optional, List
+from cachetools.func import ttl_cache
+from typing import Dict, Tuple, Iterator, NamedTuple, Optional, List, Set, TYPE_CHECKING
 from weakref import WeakValueDictionary
 
 from aim.ext.sshfs.utils import mount_remote_repo, unmount_remote_repo
@@ -22,15 +22,21 @@ from aim.sdk.sequence_collection import QuerySequenceCollection, QueryRunSequenc
 from aim.sdk.sequence import Sequence
 from aim.sdk.types import QueryReportMode
 from aim.sdk.data_version import DATA_VERSION
+from aim.sdk.remote_repo_proxy import RemoteRepoProxy
+from aim.sdk.lock_manager import LockManager, RunLock
 
-from aim.storage.locking import AutoFileLock
+from aim.storage.locking import SoftFileLock
 from aim.storage.container import Container
 from aim.storage.rockscontainer import RocksContainer
 from aim.storage.union import RocksUnionContainer
 from aim.storage.treeviewproxy import ProxyTree
+from aim.storage.lock_proxy import ProxyLock
 
 from aim.storage.structured.db import DB
 from aim.storage.structured.proxy import StructuredRunProxy
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +79,9 @@ class RepoAutoClean(AutoClean):
         """Close the `Repo` and unmount the remote repository."""
         if self._client:
             self._client._heartbeat_sender.stop()
+            self._client.get_queue().wait_for_finish()
+            self._client.get_queue().stop()
+            self._client.disconnect()
         if self._mount_root:
             logger.debug(f'Unmounting remote repository at {self._mount_root}')
             unmount_remote_repo(self.root_path, self._mount_root)
@@ -87,7 +96,7 @@ class Repo:
     Provides API for querying Runs/Metrics based on a given expression.
 
     Args:
-        path (str): Path to Aim repository.
+        path (:obj:`str`): Path to Aim repository.
         read_only (:obj:`bool`, optional): Flag for opening Repo in readonly mode. False by default.
         init (:obj:`bool`, optional): Flag used to initialize new Repo. False by default.
             Recommended to use ``aim init`` command instead.
@@ -104,19 +113,21 @@ class Repo:
         self.read_only = read_only
         self._mount_root = None
         self._client: Client = None
+        self._lock_manager: LockManager = None
         if path.startswith('ssh://'):
             self._mount_root, self.root_path = mount_remote_repo(path)
         elif self.is_remote_path(path):
             remote_path = path.replace('aim://', '')
             self._client = Client(remote_path)
+            self._remote_repo_proxy = RemoteRepoProxy(self._client)
             self.root_path = remote_path
-            self._check_remote_version_compatibility()
         else:
             self.root_path = path
         self.path = os.path.join(self.root_path, get_aim_repo_name())
 
         if init:
             os.makedirs(self.path, exist_ok=True)
+            os.makedirs(os.path.join(self.path, 'locks'), exist_ok=True)
         if not self.is_remote_repo and not os.path.exists(self.path):
             if self._mount_root:
                 unmount_remote_repo(self.root_path, self._mount_root)
@@ -131,13 +142,14 @@ class Repo:
         self.structured_db = None
 
         if not self.is_remote_repo:
-            self._lock_path = os.path.join(self.path, '.repo_lock')
-            self._lock = AutoFileLock(self._lock_path, timeout=10)
+            self._lock_manager = LockManager(self.path)
+            self._sdb_lock_path = os.path.join(self.path, 'locks', 'structured_db_lock')
+            self._sdb_lock = SoftFileLock(self._sdb_lock_path, timeout=5 * 60)  # timeout after 5 minutes
 
-            with self.lock():
-                status = self.check_repo_status(self.root_path)
-                self.structured_db = DB.from_path(self.path)
-                if init or status == RepoStatus.PATCH_REQUIRED:
+            status = self.check_repo_status(self.root_path)
+            self.structured_db = DB.from_path(self.path)
+            if init or status == RepoStatus.PATCH_REQUIRED:
+                with self._sdb_lock:
                     self.structured_db.run_upgrades()
                     with open(os.path.join(self.path, 'VERSION'), 'w') as version_fh:
                         version_fh.write('.'.join(map(str, DATA_VERSION)) + '\n')
@@ -156,16 +168,6 @@ class Repo:
 
     def __eq__(self, o: 'Repo') -> bool:
         return self.path == o.path
-
-    @contextmanager
-    def lock(self):
-        assert not self.is_remote_repo
-
-        self._lock.acquire()
-        try:
-            yield self._lock
-        finally:
-            self._lock.release()
 
     @classmethod
     def default_repo_path(cls) -> str:
@@ -194,7 +196,7 @@ class Repo:
         """Named constructor for Repo for given path.
 
         Arguments:
-            path (str): Path to Aim repository.
+            path (:obj:`str`): Path to Aim repository.
             read_only (:obj:`bool`, optional): Flag for opening Repo in readonly mode. False by default.
             init (:obj:`bool`, optional): Flag used to initialize new Repo. False by default.
                 Recommended to use ``aim init`` command instead.
@@ -214,7 +216,7 @@ class Repo:
         """Check Aim repository existence.
 
         Args:
-            path (str): Path to Aim repository.
+            path (:obj:`str`): Path to Aim repository.
         Returns:
             True if repository exists, False otherwise.
         """
@@ -227,7 +229,7 @@ class Repo:
         """Remove Aim repository.
 
         Args:
-            path (str): Path to Aim repository.
+            path (:obj:`str`): Path to Aim repository.
         """
         path = clean_repo_path(path)
         repo = cls._pool.get(path)
@@ -250,43 +252,6 @@ class Repo:
             else:
                 return RepoStatus.PATCH_REQUIRED
         return RepoStatus.UPDATED
-
-    def _check_remote_version_compatibility(self):
-        assert self.is_remote_repo
-        from aim.__version__ import __version__ as client_version
-        import grpc
-
-        error_message_template = 'The Aim Remote tracking server version ({}) '\
-                                 'is not compatible with the Aim client version ({}).'\
-                                 'Please upgrade either the Aim Client or the Aim Remote.'
-
-        warning_message_template = 'The Aim Remote tracking server version ({}) ' \
-                                   'and the Aim client version ({}) do not match.' \
-                                   'Consider upgrading either the client or remote tracking server.'
-
-        try:
-            remote_version = self._client.get_version()
-        except grpc.RpcError as e:
-            if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                remote_version = '<3.12.0'
-            else:
-                raise
-
-        # server doesn't yet have the `get_version()` method implemented
-        if remote_version == '<3.12.0':
-            RuntimeError(error_message_template.format(remote_version, client_version))
-
-        # compare versions
-        if client_version == remote_version:
-            return
-
-        # if the server has a newer version always force to upgrade the client
-        if client_version < remote_version:
-            raise RuntimeError(error_message_template.format(remote_version, client_version))
-
-        # for other mismatching versions throw a warning for now
-        logger.warning(warning_message_template.format(remote_version, client_version))
-        # further incompatibility list will be added manually
 
     @classmethod
     def get_version(cls, path: str):
@@ -347,12 +312,13 @@ class Repo:
         sub: str = None,
         *,
         read_only: bool,
-        from_union: bool = False  # TODO maybe = True by default
+        from_union: bool = False,  # TODO maybe = True by default
+        no_cache: bool = False,
     ):
         if not self.is_remote_repo:
-            return self.request(name, sub, read_only=read_only, from_union=from_union).tree()
+            return self.request(name, sub, read_only=read_only, from_union=from_union, no_cache=no_cache).tree()
         else:
-            return ProxyTree(self._client, name, sub, read_only, from_union)
+            return ProxyTree(self._client, name, sub, read_only=read_only, from_union=from_union, no_cache=no_cache)
 
     def request(
             self,
@@ -360,12 +326,13 @@ class Repo:
             sub: str = None,
             *,
             read_only: bool,
-            from_union: bool = False  # TODO maybe = True by default
+            from_union: bool = False,  # TODO maybe = True by default
+            no_cache: bool = False,
     ):
 
         container_config = ContainerConfig(name, sub, read_only)
         container_view = self.container_view_pool.get(container_config)
-        if container_view is None:
+        if container_view is None or no_cache:
             if read_only:
                 if from_union:
                     path = name
@@ -379,31 +346,38 @@ class Repo:
                 container = self._get_container(path, read_only=False, from_union=False)
 
             container_view = container
-            self.container_view_pool[container_config] = container_view
+            if not no_cache:
+                self.container_view_pool[container_config] = container_view
 
         return container_view
 
-    def request_props(self, hash_: str, read_only: bool):
+    def request_props(self, hash_: str, read_only: bool, created_at: 'datetime' = None):
         if self.is_remote_repo:
-            return StructuredRunProxy(self._client, hash_, read_only)
+            return StructuredRunProxy(self._client, hash_, read_only, created_at)
 
         assert self.structured_db
         _props = None
 
-        with self.lock():
-            if self.run_props_cache_hint:
-                _props = self.structured_db.caches[self.run_props_cache_hint][hash_]
+        if self.run_props_cache_hint:
+            _props = self.structured_db.caches[self.run_props_cache_hint][hash_]
+        if not _props:
+            _props = self.structured_db.find_run(hash_)
             if not _props:
-                _props = self.structured_db.find_run(hash_)
-                if not _props:
-                    if read_only:
-                        raise RepoIntegrityError(f'Missing props for Run {hash_}')
-                    else:
-                        _props = self.structured_db.create_run(hash_)
-                if self.run_props_cache_hint:
-                    self.structured_db.caches[self.run_props_cache_hint][hash_] = _props
+                if read_only:
+                    raise RepoIntegrityError(f'Missing props for Run {hash_}')
+                else:
+                    with self._sdb_lock:
+                        _props = self.structured_db.create_run(hash_, created_at)
+            if self.run_props_cache_hint:
+                self.structured_db.caches[self.run_props_cache_hint][hash_] = _props
 
         return _props
+
+    def request_run_lock(self, hash_: str, timeout: int = 10) -> 'RunLock':
+        if self.is_remote_repo:
+            return ProxyLock(self._client, hash_)
+        assert self._lock_manager
+        return self._lock_manager.get_run_lock(hash_, timeout=timeout)
 
     def iter_runs(self) -> Iterator['Run']:
         """Iterate over Repo runs.
@@ -429,6 +403,49 @@ class Repo:
         else:
             raise StopIteration
 
+    def run_exists(self, run_hash: str) -> bool:
+        return run_hash in self._all_run_hashes()
+
+    def is_index_corrupted(self) -> bool:
+        corruption_marker = os.path.join(self.path, 'meta', 'index', '.corrupted')
+        return os.path.exists(corruption_marker)
+
+    @ttl_cache(ttl=0.5)
+    def _all_run_hashes(self) -> Set[str]:
+        if self.is_remote_repo:
+            return set(self._remote_repo_proxy.list_all_runs())
+        else:
+            chunks_dir = os.path.join(self.path, 'meta', 'chunks')
+            if os.path.exists(chunks_dir):
+                return set(os.listdir(chunks_dir))
+            else:
+                return set()
+
+    def list_all_runs(self) -> List[str]:
+        return list(self._all_run_hashes())
+
+    def list_corrupted_runs(self) -> List[str]:
+        from aim.storage.encoding import decode_path
+
+        def get_run_hash_from_prefix(prefix: bytes):
+            return decode_path(prefix)[-1]
+
+        container = RocksUnionContainer(os.path.join(self.path, 'meta'), read_only=True)
+        return list(map(get_run_hash_from_prefix, container.corrupted_dbs))
+
+    def _active_run_hashes(self) -> Set[str]:
+        if self.is_remote_repo:
+            return set(self._remote_repo_proxy.list_active_runs())
+        else:
+            chunks_dir = os.path.join(self.path, 'meta', 'progress')
+            if os.path.exists(chunks_dir):
+                return set(os.listdir(chunks_dir))
+            else:
+                return set()
+
+    def list_active_runs(self) -> List[str]:
+        return list(self._active_run_hashes())
+
     def total_runs_count(self) -> int:
         db = self.structured_db
         if db:
@@ -445,7 +462,7 @@ class Repo:
         """Get run if exists.
 
         Args:
-            run_hash (str): Run hash.
+            run_hash (:obj:`str`): Run hash.
         Returns:
             :obj:`Run` object if hash is found in repository. `None` otherwise.
         """
@@ -530,8 +547,9 @@ class Repo:
             (True, []) if all runs were copied successfully,
             (False, :obj:`list`) with list of remaining runs otherwise.
         """
+        from tqdm import tqdm
         remaining_runs = []
-        for run_hash in run_hashes:
+        for run_hash in tqdm(run_hashes):
             try:
                 self._copy_run(run_hash, dest_repo)
             except Exception as e:
@@ -554,8 +572,9 @@ class Repo:
             (True, []) if all runs were moved successfully,
             (False, :obj:`list`) with list of remaining runs otherwise.
         """
+        from tqdm import tqdm
         remaining_runs = []
-        for run_hash in run_hashes:
+        for run_hash in tqdm(run_hashes):
             try:
                 self._copy_run(run_hash, dest_repo)
                 self._delete_run(run_hash)
@@ -568,13 +587,32 @@ class Repo:
         else:
             return True, []
 
+    def delete_experiment(self, exp_id: str) -> bool:
+        """Delete Experiment data from aim repository
+
+        This action removes experiment data permanently and cannot be reverted.
+        If you want to archive experiment but keep it's data use `repo.get_experiment(exp_id).archived = True`.
+
+        Args:
+            exp_id (:obj:`str`): Experiment to be deleted.
+
+        Returns:
+            True if experiment and corresponding runs got deleted successfully, False otherwise.
+        """
+        try:
+            self._delete_experiment(exp_id)
+            return True
+        except Exception as e:
+            logger.warning(f'Error while trying to delete experiment \'{exp_id}\'. {str(e)}.')
+            return False
+
     def query_metrics(self,
                       query: str = '',
                       report_mode: QueryReportMode = QueryReportMode.PROGRESS_BAR) -> QuerySequenceCollection:
         """Get metrics satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -590,7 +628,7 @@ class Repo:
         """Get image collections satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -606,7 +644,7 @@ class Repo:
         """Get audio collections satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -622,7 +660,7 @@ class Repo:
         """Get Figures collections satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -638,7 +676,7 @@ class Repo:
         """Get distribution collections satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -654,7 +692,7 @@ class Repo:
         """Get text collections satisfying query expression.
 
         Args:
-             query (str): query expression.
+             query (:obj:`str`): query expression.
              report_mode(:obj:`QueryReportMode`, optional): indicates report mode
                 (0: DISABLED, 1: PROGRESS BAR, 2: PROGRESS TUPLE). QueryReportMode.PROGRESS_BAR if not specified.
         Returns:
@@ -713,7 +751,7 @@ class Repo:
 
         Args:
             sequence_types (:obj:`tuple[str]`, optional): Sequence types to get tracked sequence names/contexts for.
-            Defaults to 'metric'.
+                Defaults to 'metric'.
 
         Returns:
             :obj:`dict`: Tree of sequences and their contexts groupped by sequence type.
@@ -763,6 +801,15 @@ class Repo:
         except KeyError:
             return {}
 
+    def prune(self):
+        """
+        Utility function to remove dangling/orphan params/sequences with no referring runs.
+        """
+        from aim.sdk.utils import prune
+        if self.is_remote_repo:
+            self._remote_repo_proxy.prune()
+        prune(self)
+
     def _prepare_runs_cache(self):
         if self.is_remote_repo:
             return
@@ -773,77 +820,154 @@ class Repo:
         db.init_cache(cache_name, db.runs, lambda run: run.hash)
         self.run_props_cache_hint = cache_name
 
+    def _delete_experiment(self, exp_id):
+        with self.structured_db:
+            exp = self.structured_db.find_experiment(exp_id)
+            # delete all runs locally first
+            for run in exp.runs:
+                # remove data from index container
+                self._delete_local_run_data(run.hash)
+
+            # batch delete operation for all runs, notes etc.
+            self.structured_db.delete_experiment(exp_id)
+
+    def _delete_local_run_data(self, run_hash: str):
+        # remove data from index container
+        index_tree = self._get_index_container('meta', timeout=0).tree()
+        del index_tree.subtree(('meta', 'chunks'))[run_hash]
+
+        # delete rocksdb containers data
+        sub_dirs = ('chunks', 'progress', 'locks')
+        for sub_dir in sub_dirs:
+            meta_path = os.path.join(self.path, 'meta', sub_dir, run_hash)
+            if os.path.isfile(meta_path):
+                os.remove(meta_path)
+            else:
+                shutil.rmtree(meta_path, ignore_errors=True)
+            seqs_path = os.path.join(self.path, 'seqs', sub_dir, run_hash)
+            if os.path.isfile(seqs_path):
+                os.remove(seqs_path)
+            else:
+                shutil.rmtree(seqs_path, ignore_errors=True)
+
+        # remove dangling locks
+        lock_path = os.path.join(self.path, 'locks', f'{run_hash}.softlock')
+        if os.path.exists(lock_path):
+            os.remove(lock_path)
+
     def _delete_run(self, run_hash):
-        # try to acquire a lock on a run container to check if it is still in progress or not
-        # in progress runs can't be deleted
-        lock_path = os.path.join(self.path, 'meta', 'locks', run_hash)
-        lock = AutoFileLock(lock_path, timeout=0)
-        lock.acquire()
+        if self.is_remote_repo:
+            return self._remote_repo_proxy.delete_run(run_hash)
 
         with self.structured_db:  # rollback db entity delete if subsequent actions fail.
             # remove database entry
             self.structured_db.delete_run(run_hash)
-
-            # remove data from index container
-            index_tree = self._get_index_container('meta', timeout=0).tree()
-            del index_tree.subtree(('meta', 'chunks'))[run_hash]
-
-            # delete rocksdb containers data
-            sub_dirs = ('chunks', 'progress', 'locks')
-            for sub_dir in sub_dirs:
-                meta_path = os.path.join(self.path, 'meta', sub_dir, run_hash)
-                if os.path.isfile(meta_path):
-                    os.remove(meta_path)
-                else:
-                    shutil.rmtree(meta_path, ignore_errors=True)
-                seqs_path = os.path.join(self.path, 'seqs', sub_dir, run_hash)
-                if os.path.isfile(seqs_path):
-                    os.remove(seqs_path)
-                else:
-                    shutil.rmtree(seqs_path, ignore_errors=True)
+            self._delete_local_run_data(run_hash)
 
     def _copy_run(self, run_hash, dest_repo):
-        # try to acquire a lock on a run container to check if it is still in progress or not
-        # in progress runs can't be copied
-        lock_path = os.path.join(self.path, 'meta', 'locks', run_hash)
-        lock = AutoFileLock(lock_path, timeout=0)
-        lock.acquire()
-        with dest_repo.structured_db:  # rollback destination db entity if subsequent actions fail.
-            # copy run structured data
-            source_structured_run = self.structured_db.find_run(run_hash)
-            # create destination structured run db instance, set experiment and archived state
-            dest_structured_run = dest_repo.structured_db.create_run(run_hash, source_structured_run.created_at)
-            dest_structured_run.experiment = source_structured_run.experiment
-            dest_structured_run.archived = source_structured_run.archived
-            # create and add to the destination run source tags
-            for source_tag in source_structured_run.tags_obj:
-                try:
-                    dest_tag = dest_repo.structured_db.create_tag(source_tag.name)
-                    dest_tag.color = source_tag.color
-                    dest_tag.description = source_tag.description
-                except ValueError:
-                    pass  # if the tag already exists in destination db no need to do anything
-                dest_structured_run.add_tag(source_tag.name)
-
+        def copy_trees():
             # copy run meta tree
-            source_meta_run_tree = self.request_tree(
-                'meta', run_hash, read_only=True, from_union=True
-            ).subtree('meta').subtree('chunks').subtree(run_hash)
-            dest_meta_run_tree = dest_repo.request_tree(
-                'meta', run_hash, read_only=False, from_union=True
-            ).subtree('meta').subtree('chunks').subtree(run_hash)
-            dest_meta_run_tree[...] = source_meta_run_tree[...]
-            dest_index = dest_repo._get_index_tree('meta', timeout=0).view(())
+            source_meta_tree = self.request_tree(
+                'meta', run_hash, read_only=True, from_union=False, no_cache=True
+            ).subtree('meta')
+            dest_meta_tree = dest_repo.request_tree(
+                'meta', run_hash, read_only=False, from_union=False, no_cache=True
+            ).subtree('meta')
+            dest_meta_run_tree = dest_meta_tree.subtree('chunks').subtree(run_hash)
+            dest_meta_tree[...] = source_meta_tree[...]
+            dest_index = dest_repo._get_index_tree('meta', timeout=10).view(())
             dest_meta_run_tree.finalize(index=dest_index)
 
             # copy run series tree
             source_series_run_tree = self.request_tree(
-                'seqs', run_hash, read_only=True
-            ).subtree('seqs').subtree('chunks').subtree(run_hash)
+                'seqs', run_hash, read_only=True, no_cache=True
+            ).subtree('seqs')
             dest_series_run_tree = dest_repo.request_tree(
-                'seqs', run_hash, read_only=False
-            ).subtree('seqs').subtree('chunks').subtree(run_hash)
-            dest_series_run_tree[...] = source_series_run_tree[...]
+                'seqs', run_hash, read_only=False, no_cache=True
+            ).subtree('seqs')
+
+            # copy v2 sequences
+            source_v2_tree = source_series_run_tree.subtree(('v2', 'chunks', run_hash))
+            dest_v2_tree = dest_series_run_tree.subtree(('v2', 'chunks', run_hash))
+            for ctx_id in source_v2_tree.keys():
+                for metric_name in source_v2_tree.subtree(ctx_id).keys():
+                    source_val_view = source_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('val')
+                    source_step_view = source_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('step', dtype='int64')
+                    source_epoch_view = source_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('epoch', dtype='int64')
+                    source_time_view = source_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('time', dtype='int64')
+
+                    dest_val_view = dest_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('val').allocate()
+                    dest_step_view = dest_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('step', dtype='int64').allocate()
+                    dest_epoch_view = dest_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('epoch', dtype='int64').allocate()
+                    dest_time_view = dest_v2_tree.\
+                        subtree((ctx_id, metric_name)).array('time', dtype='int64').allocate()
+
+                    for key, val in source_val_view.items():
+                        dest_val_view[key] = val
+                        dest_step_view[key] = source_step_view[key]
+                        dest_epoch_view[key] = source_epoch_view[key]
+                        dest_time_view[key] = source_time_view[key]
+
+            # copy v1 sequences
+            source_v1_tree = source_series_run_tree.subtree(('chunks', run_hash))
+            dest_v1_tree = dest_series_run_tree.subtree(('chunks', run_hash))
+            for ctx_id in source_v1_tree.keys():
+                for metric_name in source_v1_tree.\
+                        subtree(ctx_id).keys():
+                    source_val_view = source_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('val')
+                    source_epoch_view = source_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('epoch', dtype='int64')
+                    source_time_view = source_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('time', dtype='int64')
+
+                    dest_val_view = dest_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('val').allocate()
+                    dest_epoch_view = dest_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('epoch', dtype='int64').allocate()
+                    dest_time_view = dest_v1_tree.\
+                        subtree((ctx_id, metric_name)).array('time', dtype='int64').allocate()
+
+                    for key, val in source_val_view.items():
+                        dest_val_view[key] = val
+                        dest_epoch_view[key] = source_epoch_view[key]
+                        dest_time_view[key] = source_time_view[key]
+
+        def copy_structured_props():
+            source_structured_run = self.structured_db.find_run(run_hash)
+            dest_structured_run = dest_repo.request_props(run_hash,
+                                                          read_only=False,
+                                                          created_at=source_structured_run.created_at)
+            dest_structured_run.name = source_structured_run.name
+            dest_structured_run.experiment = source_structured_run.experiment
+            dest_structured_run.description = source_structured_run.description
+            dest_structured_run.archived = source_structured_run.archived
+            for source_tag in source_structured_run.tags:
+                dest_structured_run.add_tag(source_tag)
+
+        # check run lock info. in progress runs can't be copied
+        if self._lock_manager.get_run_lock_info(run_hash).locked:
+            raise RuntimeError(f'Cannot copy Run \'{run_hash}\'. Run is locked.')
+
+        if dest_repo.is_remote_repo:
+            # create remote run
+            try:
+                copy_trees()
+                copy_structured_props()
+            except Exception as e:
+                raise e
+        else:
+            with dest_repo.structured_db:  # rollback destination db entity if subsequent actions fail.
+                # copy run structured data
+                copy_structured_props()
+                copy_trees()
 
     def close(self):
         if self._resources is None:
@@ -857,7 +981,65 @@ class Repo:
     @contextmanager
     def atomic_track(self, queue_id):
         if self.is_remote_repo:
-            self._client.start_instructions_batch()
+            self._client.start_instructions_batch(queue_id)
         yield
         if self.is_remote_repo:
             self._client.flush_instructions_batch(queue_id)
+
+    def _backup_run(self, run_hash):
+        from aim.sdk.utils import backup_run
+        if self.is_remote_repo:
+            self._remote_repo_proxy._restore_run(run_hash)  # noqa
+        else:
+            backup_run(self, run_hash)
+
+    def _restore_run(self, run_hash):
+        from aim.sdk.utils import restore_run_backup
+        if self.is_remote_repo:
+            self._remote_repo_proxy._restore_run(run_hash)  # noqa
+        else:
+            restore_run_backup(self, run_hash)
+
+    def _close_run(self, run_hash):
+        def optimize_container(path, extra_options):
+            rc = RocksContainer(path, read_only=True, **extra_options)
+            rc.optimize_for_read()
+
+        if self.is_remote_repo:
+            self._remote_repo_proxy._close_run(run_hash)
+
+        from aim.sdk.index_manager import RepoIndexManager
+        lock_manager = LockManager(self.path)
+        index_manager = RepoIndexManager.get_index_manager(self)
+
+        if lock_manager.release_locks(run_hash, force=True):
+            # Run rocksdb optimizations if container locks are removed
+            meta_db_path = os.path.join(self.path, 'meta', 'chunks', run_hash)
+            seqs_db_path = os.path.join(self.path, 'seqs', 'chunks', run_hash)
+            optimize_container(meta_db_path, extra_options={'compaction': True})
+            optimize_container(seqs_db_path, extra_options={})
+        if index_manager.run_needs_indexing(run_hash):
+            index_manager.index(run_hash)
+
+    def _recreate_index(self):
+        from tqdm import tqdm
+        if self.is_remote_repo:
+            self._remote_repo_proxy._recreate_index()
+            return
+
+        from aim.sdk.index_manager import RepoIndexManager
+        index_manager = RepoIndexManager.get_index_manager(self)
+
+        # force delete the index db and the locks
+
+        index_lock_path = os.path.join(self.path, 'locks', 'index')
+        if os.path.exists(index_lock_path):
+            os.remove(index_lock_path)
+
+        index_db_path = os.path.join(self.path, 'meta', 'index')
+        shutil.rmtree(index_db_path, ignore_errors=True)
+
+        # recreate the index db
+        run_hashes = self._all_run_hashes()
+        for run_hash in tqdm(run_hashes, desc='Indexing runs', total=len(run_hashes)):
+            index_manager.index(run_hash)

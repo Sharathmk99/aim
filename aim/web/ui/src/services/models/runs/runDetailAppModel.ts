@@ -4,9 +4,11 @@ import { IRunBatch } from 'pages/RunDetail/types';
 
 import runsService from 'services/api/runs/runsService';
 import * as analytics from 'services/analytics';
+import experimentsService from 'services/api/experiments/experimentsService';
 
 import { INotification } from 'types/components/NotificationContainer/NotificationContainer';
 import { IApiRequest } from 'types/services/services';
+import { ITagInfo } from 'types/pages/tags/Tags';
 
 import exceptionHandler from 'utils/app/exceptionHandler';
 import { encode } from 'utils/encoder/encoder';
@@ -17,7 +19,7 @@ import {
   decodePathsVals,
   iterFoldTree,
 } from 'utils/encoder/streamEncoding';
-import { filterSingleRunMetricsData } from 'utils/filterMetricData';
+import { filterSingleRunMetricsData } from 'utils/app/filterMetricData';
 
 import createModel from '../model';
 
@@ -76,6 +78,7 @@ function getRunInfo(runHash: string): IApiRequest<void> {
         runParams: data.params,
         runTraces: data.traces,
         runInfo: data.props,
+        runArtifacts: data.artifacts,
         experimentId: data.props.experiment.id,
         isRunInfoLoading: false,
       });
@@ -93,7 +96,7 @@ function getRunsOfExperiment(
   if (getRunsOfExperimentRequestRef) {
     getRunsOfExperimentRequestRef.abort();
   }
-  getRunsOfExperimentRequestRef = runsService.getRunsOfExperiment(
+  getRunsOfExperimentRequestRef = experimentsService.getRunsOfExperiment(
     runHash,
     params,
   );
@@ -117,12 +120,16 @@ function getRunsOfExperiment(
   };
 }
 
-function processRunBatchData(data: IRunBatch[]): {
+function processRunBatchData(
+  data: IRunBatch[],
+  metricsBatch: IRunBatch[],
+  systemBatch: IRunBatch[],
+): {
   runMetricsBatch: IRunBatch[];
   runSystemBatch: IRunBatch[];
 } {
-  const runMetricsBatch: IRunBatch[] = [];
-  const runSystemBatch: IRunBatch[] = [];
+  const runMetricsBatch: IRunBatch[] = metricsBatch?.slice() ?? [];
+  const runSystemBatch: IRunBatch[] = systemBatch?.slice() ?? [];
 
   for (let run of data) {
     const { values, iters } = filterSingleRunMetricsData(run);
@@ -151,7 +158,10 @@ function processRunBatchData(data: IRunBatch[]): {
   runMetricsBatch.sort(alphabeticalSortComparator({ orderBy: 'sortKey' }));
   runSystemBatch.sort(alphabeticalSortComparator({ orderBy: 'sortKey' }));
 
-  return { runMetricsBatch, runSystemBatch };
+  return {
+    runMetricsBatch: _.uniqBy(runMetricsBatch, 'sortKey'),
+    runSystemBatch: _.uniqBy(runSystemBatch, 'sortKey'),
+  };
 }
 
 function getRunMetricsBatch(body: any, runHash: string) {
@@ -161,19 +171,25 @@ function getRunMetricsBatch(body: any, runHash: string) {
   getRunsBatchRequestRef = runsService.getRunMetricsBatch(body, runHash);
   return {
     call: async () => {
-      model.setState({ isRunBatchLoading: true });
+      try {
+        const data = await getRunsBatchRequestRef.call();
+        const { runMetricsBatch, runSystemBatch } = processRunBatchData(
+          data,
+          model.getState().runMetricsBatch,
+          model.getState().runSystemBatch,
+        );
 
-      const data = await getRunsBatchRequestRef.call((detail: any) => {
-        exceptionHandler({ detail, model });
-      });
-      const { runMetricsBatch, runSystemBatch } = processRunBatchData(data);
-
-      model.setState({
-        ...model.getState(),
-        runMetricsBatch,
-        runSystemBatch,
-        isRunBatchLoading: false,
-      });
+        model.setState({
+          ...model.getState(),
+          runMetricsBatch,
+          runSystemBatch,
+          isRunBatchLoading: false,
+        });
+      } catch (ex: Error | any) {
+        if (ex.name !== 'AbortError') {
+          exceptionHandler({ detail: ex, model });
+        }
+      }
     },
     abort: getRunsBatchRequestRef.abort,
   };
@@ -321,7 +337,7 @@ function editRunNameAndDescription(
           onNotificationAdd({
             id: Date.now(),
             severity: 'success',
-            messages: ['Changes were saved'],
+            messages: ['Changes successfully saved'],
           });
         } else {
           onNotificationAdd({
@@ -339,6 +355,18 @@ function editRunNameAndDescription(
       messages: [err.message],
     });
   }
+}
+
+function editTags(tags: ITagInfo[]) {
+  const state = model.getState();
+
+  model.setState({
+    ...state,
+    runInfo: {
+      ...state?.runInfo,
+      tags,
+    },
+  });
 }
 
 function onNotificationDelete(id: number) {
@@ -369,6 +397,7 @@ const runDetailAppModel = {
   onNotificationAdd,
   onNotificationDelete,
   editRunNameAndDescription,
+  editTags,
 };
 
 export default runDetailAppModel;

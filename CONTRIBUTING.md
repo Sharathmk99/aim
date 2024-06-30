@@ -19,24 +19,20 @@ This section describes governance processes we follow in developing Aim.
 
 ### Persons of Interest
 
+#### BDFL
+Role: All final decisions related to Aim.
+- Gev Soghomonyan ([SGevorg](https://github.com/SGevorg))
+
 #### Authors
 
 - Gev Soghomonyan ([SGevorg](https://github.com/SGevorg))
-- Gor Arakelyan ([gorarakelyan](https://github.com/gorarakelyan))
+- Gor Arakelyan ([gorarakelyan](https://github.com/gorarakelyan)) (no longer associated)
 
-#### Primary Maintainers
+#### Maintainers
 
 - Albert Torosyan ([alberttorosyan](https://github.com/alberttorosyan))
 - Karen Hambardzumyan ([mahnerak](https://github.com/mahnerak))
-- Ruben Karapetyan ([roubkar](https://github.com/roubkar))
-
-#### Core Contributors
-
-- Arsen Alkamyan ([arsengit](https://github.com/arsengit))
-- Karo Muradyan ([KaroMourad](https://github.com/KaroMourad))
 - Mihran Vanyan ([mihran113](https://github.com/mihran113))
-- Ruben Aprikyan ([rubenaprikyan](https://github.com/rubenaprikyan))
-- Vardges Hovhannisyan ([VkoHov](https://github.com/VkoHov))
 
 ### Releases
 
@@ -64,7 +60,6 @@ Most of the backend components, including SDK, Storage, Web APIs and CLI are dev
 In order to start development you must install dev requirements and the aim package itself, in editable mode.
 ```shell
 pip install -r requirements.dev.txt
-pip install -e aim/web/ui
 pip install -e .
 ```
 
@@ -86,7 +81,7 @@ as a check on GitHub Actions when new PR opened.
 New unit-tests must be added along with the code changes. In order to setup the testing environment
 ```shell
 cd tests
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 Aim python code unit-tests are located at `tests/` directory. Unit-tests are written in Python's `unittest` package style.

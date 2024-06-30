@@ -111,17 +111,18 @@ const Params = ({
   chartPanelOffsetHeight,
   requestProgress,
   sortOptions,
+  onRunsTagsChange,
   onRowsVisibilityChange,
 }: IParamsProps): React.FunctionComponentElement<React.ReactNode> => {
   const [isProgressBarVisible, setIsProgressBarVisible] =
     React.useState<boolean>(false);
   const chartProps: any[] = React.useMemo(() => {
-    return (highPlotData || []).map((chartData: any, index: number) => ({
+    return (highPlotData || []).map((chartData: any) => ({
       curveInterpolation,
       isVisibleColorIndicator,
       onAxisBrushExtentChange,
       brushExtents,
-      chartTitle: chartTitleData[index],
+      chartTitle: chartTitleData[chartData.data[0]?.chartIndex],
     }));
   }, [
     highPlotData,
@@ -216,6 +217,8 @@ const Params = ({
                       chartProps={chartProps}
                       resizeMode={resizeMode}
                       selectOptions={groupingSelectOptions}
+                      onRunsTagsChange={onRunsTagsChange}
+                      onChangeTooltip={onChangeTooltip}
                       controls={
                         <Controls
                           curveInterpolation={curveInterpolation}

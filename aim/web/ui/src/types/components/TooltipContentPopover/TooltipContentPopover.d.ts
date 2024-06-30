@@ -1,3 +1,5 @@
+import { TooltipAppearanceEnum } from 'modules/BaseExplorer/components/Controls/ConfigureTooltip';
+
 import {
   ITooltip,
   IGroupingSelectOption,
@@ -6,6 +8,7 @@ import {
 export interface ITooltipContentPopoverProps {
   selectOptions: IGroupingSelectOption[];
   selectedFields?: string[];
-  displayTooltip?: boolean;
+  isTooltipDisplayed?: boolean;
+  tooltipAppearance?: TooltipAppearanceEnum;
   onChangeTooltip: (tooltip: Partial<ITooltip>) => void;
 }

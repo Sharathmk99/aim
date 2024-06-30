@@ -37,6 +37,14 @@
         &__runInfoBox {
           max-width: 50%;
         }
+        &__explore {
+          display: flex;
+          flex: 1;
+          align-items: center;
+          justify-content: flex-end;
+          margin-right: 1rem;
+          margin-bottom: 1rem;
+        }
         &__actionContainer {
           width: 4.5rem;
           display: flex;
@@ -66,7 +74,21 @@
           display: flex;
           width: 100%;
         }
-        &__title {
+        &__experimentName {
+          display: inline-block;
+          max-width: 100%;
+          text-decoration: none;
+
+
+          &:hover {
+            text-decoration: underline;
+            color: inherit;
+          }
+        }
+        &__runName {
+          display: flex;
+          width: 100%;
+          margin-left: $space-xxs;
           margin-bottom: $space-xxs;
         }
         &__date {
@@ -93,7 +115,6 @@
         &__container {
           display: flex;
           align-items: flex-start;
-          flex-direction: column;
           margin-right: $space-xxxs;
           cursor: pointer;
           max-width: calc(100% - 6.5rem);
@@ -124,12 +145,19 @@
     &__tabPanelBox {
       overflow-y: auto;
       height: calc(100vh - 112px);
+      &__suspenseLoaderContainer {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        height: 100%;
+        align-items: center;
+      }
     }
 
     &__tabsContainer {
       background: #ffffff;
-      box-shadow: 0 toRem(4px) toRem(6px) rgba(144, 175, 218, 0.2);
-      border-bottom: $border-grey-lighter;
+      box-shadow: 0 toRem(4px) toRem(6px) rgba(144, 175, 218, 0.2),
+        0 1px 0 0 $cuddle-20;
       border-top: $border-grey-lighter;
       position: relative;
       z-index: 1;
@@ -187,7 +215,7 @@
     &__tabPanel {
       .MuiBox-root {
         height: 100%;
-        .runDetailParamsTabLoader {
+        .RunDetailTabLoader {
           display: flex;
           align-items: center;
           justify-content: center;
@@ -209,6 +237,7 @@
 }
 
 .RunDetailParamsTabWrapper {
+  height: 100%;
   border-radius: $border-radius-lg;
   padding-top: 1.5rem;
   padding-bottom: 1.5rem;
@@ -228,19 +257,28 @@
 }
 
 .RunDetailMetricsTab {
-  padding: 1.5rem 0;
+  padding: 0 0 $space-lg;
+  &__header {
+    margin: $space-lg 0;
+    padding-bottom: 0.625rem;
+    border-bottom: $border-grey;
+  }
   &__container {
     height: 100%;
     display: flex;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: $space-lg;
     align-items: stretch;
     &__chartContainer {
+      position: relative;
       width: calc(50% - 0.75rem);
       border: $border-grey;
       border-radius: 0.5rem;
       background: $white;
       &__chartBox {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         height: 24.5rem;
         padding: 0.625rem;
         .LineChart__container {
@@ -252,6 +290,13 @@
         padding: 1rem 1.5rem 1.5rem;
         &__metricName {
           margin: $space-xs 0;
+          word-break: break-all;
+        }
+        &__pin {
+          position: absolute;
+          top: $space-xs;
+          right: $space-xs;
+          z-index: 1;
         }
         .SelectForm__tags__item {
           margin-top: 0.5rem;
@@ -388,9 +433,6 @@
             justify-content: center;
             &__button {
               background: $cuddle-30;
-              .MuiCircularProgress-root.MuiCircularProgress-colorPrimary {
-                color: $pico-80;
-              }
               &:hover {
                 background: $cuddle-50;
               }

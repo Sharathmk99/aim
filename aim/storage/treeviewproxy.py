@@ -21,8 +21,10 @@ class ProxyTree(TreeView):
     def __init__(self, client: 'Client',
                  name: str,
                  sub: str,
+                 *,
                  read_only: bool,
                  from_union: bool = False,
+                 no_cache: bool = False,
                  index=False,
                  timeout=None):
         self._resources: ProxyTreeAutoClean = None
@@ -37,11 +39,14 @@ class ProxyTree(TreeView):
             'from_union': from_union,
             'index': index,
             'timeout': timeout,
+            'no_cache': no_cache,
         }
-        args = pack_args(encode_tree(kwargs))
-        handler = self._rpc_client.get_resource_handler('TreeView', args=args)
+        self.init_args = pack_args(encode_tree(kwargs))
+        self.resource_type = 'TreeView'
+        handler = self._rpc_client.get_resource_handler(self, self.resource_type, args=self.init_args)
 
         self._resources = ProxyTreeAutoClean(self)
+        self._resources.hash = sub
         self._resources.rpc_client = client
         self._resources.handler = handler
         self._handler = handler
@@ -81,10 +86,18 @@ class ProxyTree(TreeView):
     ):
         self._rpc_client.run_instruction(self._hash, self._handler, '__delitem__', (path,), is_write_only=True)
 
+    def set(
+        self,
+        path: Union[AimObjectKey, AimObjectPath],
+        value: AimObject,
+        strict: bool = True
+    ):
+        self._rpc_client.run_instruction(self._hash, self._handler, 'set', (path, value, strict), is_write_only=True)
+
     def __setitem__(
-            self,
-            path: Union[AimObjectKey, AimObjectPath],
-            value: AimObject
+        self,
+        path: Union[AimObjectKey, AimObjectPath],
+        value: AimObject
     ):
         self._rpc_client.run_instruction(self._hash, self._handler, '__setitem__', (path, value), is_write_only=True)
 
@@ -136,17 +149,17 @@ class ProxyTree(TreeView):
     ) -> TreeArrayView:
         return TreeArrayView(self.subtree(path), dtype=dtype)
 
-    def first(
+    def first_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
-        return self._rpc_client.run_instruction(self._hash, self._handler, 'first', (path,))
+    ) -> AimObjectKey:
+        return self._rpc_client.run_instruction(self._hash, self._handler, 'first_key', (path,))
 
-    def last(
+    def last_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
-        return self._rpc_client.run_instruction(self._hash, self._handler, 'last', (path,))
+    ) -> AimObjectKey:
+        return self._rpc_client.run_instruction(self._hash, self._handler, 'last_key', (path,))
 
     def finalize(
         self,
@@ -201,6 +214,14 @@ class SubtreeView(TreeView):
     ):
         del self.tree[self.absolute_path(path)]
 
+    def set(
+        self,
+        path: Union[AimObjectKey, AimObjectPath],
+        value: AimObject,
+        strict: bool = True
+    ):
+        self.tree.set(self.absolute_path(path), value, strict)
+
     def __setitem__(
             self,
             path: Union[AimObjectKey, AimObjectPath],
@@ -241,17 +262,17 @@ class SubtreeView(TreeView):
     ) -> TreeArrayView:
         return TreeArrayView(self.subtree(path), dtype=dtype)
 
-    def first(
+    def first_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
-        return self.tree.first(self.absolute_path(path))
+    ) -> AimObjectKey:
+        return self.tree.first_key(self.absolute_path(path))
 
-    def last(
+    def last_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
-        return self.tree.last(self.absolute_path(path))
+    ) -> AimObjectKey:
+        return self.tree.last_key(self.absolute_path(path))
 
     def finalize(
         self,

@@ -55,6 +55,7 @@ import {
 import { IProjectParamsMetrics } from 'types/services/models/projects/projectsModel';
 import { IModel } from 'types/services/models/model';
 import { ISyntaxErrorDetails } from 'types/components/NotificationContainer/NotificationContainer';
+import { ITagInfo, ITagProps } from 'types/pages/tags/Tags';
 
 import getAppConfigDataMethod from 'utils/app/getAppConfigData';
 import onRowSelectAction from 'utils/app/onRowSelect';
@@ -89,6 +90,11 @@ import setRequestProgress from 'utils/app/setRequestProgress';
 import getRunData from 'utils/app/getRunData';
 import getTooltipContent from 'utils/getTooltipContent';
 import decodeWithBase58Checker from 'utils/decodeWithBase58Checker';
+import { onCopyToClipBoard } from 'utils/onCopyToClipBoard';
+import getFilteredRow from 'utils/app/getFilteredRow';
+import { getMetricHash } from 'utils/app/getMetricHash';
+import onRunsTagsChange from 'utils/app/onRunsTagsChange';
+import saveRecentSearches from 'utils/saveRecentSearches';
 
 import createModel from '../model';
 import { AppNameEnum } from '../explorer';
@@ -132,6 +138,7 @@ function getConfig(): IImagesExploreAppConfig {
       indexDensity: '5',
       recordDensity: '50',
       tooltip: {
+        appearance: CONTROLS_DEFAULT_CONFIG.images.tooltip.appearance,
         display: CONTROLS_DEFAULT_CONFIG.images.tooltip.display,
         selectedFields: CONTROLS_DEFAULT_CONFIG.images.tooltip.selectedFields,
       },
@@ -156,7 +163,7 @@ function getConfig(): IImagesExploreAppConfig {
       hiddenMetrics: [],
       hiddenColumns: [],
       hideSystemMetrics: undefined,
-      columnsWidths: {},
+      columnsWidths: { tags: 300 },
       columnsOrder: {
         left: [],
         middle: [],
@@ -412,6 +419,7 @@ function getImagesData(
           if (shouldUrlUpdate) {
             updateURL(configData);
           }
+          saveRecentSearches(AppNameEnum.IMAGES, query!);
         } catch (ex: Error | any) {
           if (ex.name === 'AbortError') {
             // Abort Error
@@ -457,27 +465,30 @@ function getSelectFormOptions(projectsData: IProjectParamsMetrics) {
   let data: ISelectOption[] = [];
   let index: number = 0;
   if (projectsData?.images) {
-    for (let key in projectsData.images) {
+    for (let seqName in projectsData.images) {
       data.push({
-        label: key,
-        group: key,
+        label: seqName,
+        group: seqName,
         color: COLORS[0][index % COLORS[0].length],
+        key: getMetricHash(seqName, {}),
+
         value: {
-          option_name: key,
+          option_name: seqName,
           context: null,
         },
       });
       index++;
 
-      for (let val of projectsData.images[key]) {
+      for (let val of projectsData.images[seqName]) {
         if (!_.isEmpty(val)) {
           let label = contextToString(val);
           data.push({
-            label: `${key} ${label}`,
-            group: key,
+            label: `${seqName} ${label}`,
+            group: seqName,
             color: COLORS[0][index % COLORS[0].length],
+            key: getMetricHash(seqName, val),
             value: {
-              option_name: key,
+              option_name: seqName,
               context: val,
             },
           });
@@ -1171,7 +1182,7 @@ function onActivePointChange(
 
   const tooltipContent = configData.images?.focusedState?.key
     ? getTooltipContent({
-        groupingItems: [GroupNameEnum.ROW],
+        groupingNames: [GroupNameEnum.ROW],
         groupingSelectOptions,
         data,
         configData,
@@ -1217,7 +1228,7 @@ function onChangeTooltip(tooltipObj: Partial<ITooltip>): void {
 
     const tooltipContent = configData.images?.focusedState?.key
       ? getTooltipContent({
-          groupingItems: [GroupNameEnum.ROW],
+          groupingNames: [GroupNameEnum.ROW],
           groupingSelectOptions,
           data,
           configData,
@@ -1277,7 +1288,7 @@ function getDataAsTableRows(
     const columnsValues: { [key: string]: string[] } = {};
 
     if (metricsCollection.config !== null) {
-      const groupConfigData: { [key: string]: string } = {};
+      const groupConfigData: { [key: string]: unknown } = {};
       for (let key in metricsCollection.config) {
         groupConfigData[getValueByField(groupingSelectOptions, key)] =
           metricsCollection.config[key];
@@ -1323,11 +1334,22 @@ function getDataAsTableRows(
           color: metricsCollection.color ?? metric.color,
           dasharray: metricsCollection.dasharray ?? metric.dasharray,
           experiment: metric.run.props.experiment?.name ?? 'default',
+          experimentId: metric.run.props.experiment?.id ?? '',
+          experiment_description:
+            metric.run.props.experiment?.description ?? '-',
           run: metric.run.props?.name ?? '-',
           description: metric.run.props?.description ?? '-',
           date: moment(metric.run.props.creation_time * 1000).format(
             TABLE_DATE_FORMAT,
           ),
+          tags: metric.run.props.tags.map((tag: ITagProps) => ({
+            archived: false,
+            color: tag.color,
+            id: tag.id,
+            comment: tag.description,
+            name: tag.name,
+            run_count: 0,
+          })),
           duration: processDurationTime(
             metric.run.props.creation_time * 1000,
             metric.run.props.end_time
@@ -1389,23 +1411,31 @@ function getDataAsTableRows(
           rows[groupKey!].items.push(
             isRawData
               ? rowValues
-              : imagesExploreTableRowRenderer(rowValues, {
-                  toggleVisibility: (e) => {
-                    e.stopPropagation();
-                    onRowVisibilityChange(rowValues.key);
+              : imagesExploreTableRowRenderer(
+                  rowValues,
+                  onModelRunsTagsChange,
+                  {
+                    toggleVisibility: (e) => {
+                      e.stopPropagation();
+                      onRowVisibilityChange(rowValues.key);
+                    },
                   },
-                }),
+                ),
           );
         } else {
           rows.push(
             isRawData
               ? rowValues
-              : imagesExploreTableRowRenderer(rowValues, {
-                  toggleVisibility: (e) => {
-                    e.stopPropagation();
-                    onRowVisibilityChange(rowValues.key);
+              : imagesExploreTableRowRenderer(
+                  rowValues,
+                  onModelRunsTagsChange,
+                  {
+                    toggleVisibility: (e) => {
+                      e.stopPropagation();
+                      onRowVisibilityChange(rowValues.key);
+                    },
                   },
-                }),
+                ),
           );
         }
       });
@@ -1428,6 +1458,7 @@ function getDataAsTableRows(
     if (metricsCollection.config !== null && !isRawData) {
       rows[groupKey!].data = imagesExploreTableRowRenderer(
         rows[groupKey!].data,
+        onModelRunsTagsChange,
         {},
         true,
         ['value', 'name', 'groups'].concat(Object.keys(columnsValues)),
@@ -1440,6 +1471,10 @@ function getDataAsTableRows(
     }
   }
   return { rows, sameValueColumns };
+}
+
+function onModelRunsTagsChange(runHash: string, tags: ITagInfo[]): void {
+  onRunsTagsChange({ runHash, tags, model, updateModelData });
 }
 
 async function onBookmarkCreate({ name, description }: IBookmarkFormState) {
@@ -1693,7 +1728,10 @@ function onExportTableData(e: React.ChangeEvent<any>): void {
 
   groupedRows?.forEach((groupedRow: any[], groupedRowIndex: number) => {
     groupedRow?.forEach((row: any) => {
-      const filteredRow: any = getFilteredRow(filteredHeader, row);
+      const filteredRow: any = getFilteredRow({
+        columnKeys: filteredHeader,
+        row,
+      });
       dataToExport.push(filteredRow);
     });
     if (groupedRows?.length - 1 !== groupedRowIndex) {
@@ -1732,28 +1770,6 @@ function onRowVisibilityChange(metricKey: string) {
     setItem('imagesTable', encode(table));
     updateModelData(config);
   }
-}
-
-function getFilteredRow(
-  columnKeys: string[],
-  row: any,
-): { [key: string]: string } {
-  return columnKeys.reduce((acc: { [key: string]: string }, column: string) => {
-    let value = row[column];
-    if (Array.isArray(value)) {
-      value = value.join(', ');
-    } else if (typeof value !== 'string') {
-      value = value || value === 0 ? JSON.stringify(value) : '-';
-    }
-
-    if (column.startsWith('params.')) {
-      acc[column.replace('params.', '')] = value;
-    } else {
-      acc[column] = value;
-    }
-
-    return acc;
-  }, {});
 }
 
 function onTableResizeEnd(tableHeight: string) {
@@ -1815,8 +1831,7 @@ function onSearchQueryCopy(): void {
   const selectedMetricsData = model.getState()?.config?.select;
   let query = getQueryStringFromSelect(selectedMetricsData as any);
   if (query) {
-    navigator.clipboard.writeText(query);
-    onNotificationAdd({
+    onCopyToClipBoard(query, false, () => onNotificationAdd, {
       notification: {
         id: Date.now(),
         severity: 'success',
@@ -1831,35 +1846,45 @@ function getQueryStringFromSelect(
   selectData: IImagesExploreAppConfig['select'],
   error?: ISyntaxErrorDetails,
 ) {
-  let query: string | undefined = '';
-  if (selectData !== undefined) {
-    if (selectData.advancedMode) {
-      query = selectData.advancedQuery;
+  let query = '()';
+  if (selectData === undefined) {
+    return query;
+  }
+  if (selectData.advancedMode) {
+    query = selectData.advancedQuery || '';
+  } else {
+    const simpleInput =
+      selectData.query?.trim() && !error?.message
+        ? `(${selectData.query.trim()})`
+        : '';
+    const selections = selectData.options?.length
+      ? `(${selectData.options
+          .map(
+            (option: ISelectOption) =>
+              `(images.name == "${option.value?.option_name}"${
+                option.value?.context === null
+                  ? ''
+                  : ' and ' +
+                    Object.keys(option.value?.context)
+                      .map(
+                        (item) =>
+                          `images.context.${item} == ${formatValue(
+                            (option.value?.context as any)[item],
+                          )}`,
+                      )
+                      .join(' and ')
+              })`,
+          )
+          .join(' or ')})`
+      : '';
+
+    if (simpleInput && selections) {
+      query = `${simpleInput} and ${selections}`;
     } else {
-      query = `${
-        selectData.query && !error?.message ? `(${selectData.query}) and ` : ''
-      }(${selectData.options
-        .map(
-          (option: ISelectOption) =>
-            `(images.name == "${option.value?.option_name}"${
-              option.value?.context === null
-                ? ''
-                : ' and ' +
-                  Object.keys(option.value?.context)
-                    .map(
-                      (item) =>
-                        `images.context.${item} == ${formatValue(
-                          (option.value?.context as any)[item],
-                        )}`,
-                    )
-                    .join(' and ')
-            })`,
-        )
-        .join(' or ')})`.trim();
+      query = `${simpleInput}${selections}`;
     }
   }
-
-  return query;
+  return query.trim() || '()';
 }
 
 function onSelectAdvancedQueryChange(query: string) {
@@ -2349,6 +2374,7 @@ const imagesExploreAppModel = {
   deleteRuns,
   archiveRuns,
   onRowSelect,
+  onRunsTagsChange: onModelRunsTagsChange,
 };
 
 export default imagesExploreAppModel;

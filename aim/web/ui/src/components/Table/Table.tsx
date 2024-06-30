@@ -2,7 +2,9 @@
 /* eslint-disable react/prop-types */
 
 import React from 'react';
-import { isEmpty, isEqual } from 'lodash-es';
+import { isEmpty, isEqual, isNil } from 'lodash-es';
+import { useResizeObserver } from 'hooks';
+import _ from 'lodash-es';
 
 import { Button, Icon, Text } from 'components/kit';
 import ControlPopover from 'components/ControlPopover/ControlPopover';
@@ -17,12 +19,12 @@ import {
 } from 'config/table/tableConfigs';
 import { IllustrationsEnum } from 'config/illustrationConfig/illustrationConfig';
 
-import useResizeObserver from 'hooks/window/useResizeObserver';
-
 import SortPopover from 'pages/Metrics/components/Table/SortPopover/SortPopover';
 import ManageColumnsPopover from 'pages/Metrics/components/Table/ManageColumnsPopover/ManageColumnsPopover';
 import HideRowsPopover from 'pages/Metrics/components/Table/HideRowsPopover/HideRowsPopover';
 import RowHeightPopover from 'pages/Metrics/components/Table/RowHeightPopover/RowHeightPopover';
+import CompareSelectedRunsPopover from 'pages/Metrics/components/Table/CompareSelectedRunsPopover';
+import MetricsValueKeyPopover from 'pages/Metrics/components/Table/MetricsValueKeyPopover';
 
 import { ITableProps } from 'types/components/Table/Table';
 
@@ -48,6 +50,8 @@ const Table = React.forwardRef(function Table(
     onRowHover = () => {},
     onRowClick = () => {},
     onTableResizeModeChange,
+    onMetricsValueKeyChange,
+    metricsValueKey,
     custom,
     data,
     columns,
@@ -92,6 +96,7 @@ const Table = React.forwardRef(function Table(
     columnsColorScales,
     onRowsVisibilityChange,
     visualizationElementType,
+    noColumnActions,
     ...props
   }: ITableProps,
   ref,
@@ -295,7 +300,9 @@ const Table = React.forwardRef(function Table(
         if (groups) {
           let groupCount = 0;
           loop: for (let key in data) {
-            top += ROW_CELL_SIZE_CONFIG[rowHeight].groupMargin;
+            top +=
+              ROW_CELL_SIZE_CONFIG[rowHeight]?.groupMargin ??
+              ROW_CELL_SIZE_CONFIG[RowHeightSize.md].groupMargins;
             for (let i = 0; i < data[key]?.items?.length; i++) {
               if (data[key].items[i].key === rowKey) {
                 top += i * rowHeight;
@@ -312,7 +319,10 @@ const Table = React.forwardRef(function Table(
             }
             top +=
               rowHeight +
-              (ROW_CELL_SIZE_CONFIG[rowHeight].groupMargin / 2) * groupCount;
+              ((ROW_CELL_SIZE_CONFIG[rowHeight]?.groupMargin ??
+                ROW_CELL_SIZE_CONFIG[RowHeightSize.md].groupMargin) /
+                2) *
+                groupCount;
             if (expanded[key]) {
               top += data[key].items.length * rowHeight;
             }
@@ -328,10 +338,11 @@ const Table = React.forwardRef(function Table(
         }
 
         if (
-          tableContainerRef.current.scrollTop > top ||
-          tableContainerRef.current.scrollTop +
-            tableContainerRef.current.offsetHeight <
-            top
+          tableContainerRef.current &&
+          (tableContainerRef.current.scrollTop > top ||
+            tableContainerRef.current.scrollTop +
+              tableContainerRef.current.offsetHeight <
+              top)
         ) {
           setTimeout(() => {
             window.requestAnimationFrame(() => {
@@ -365,11 +376,11 @@ const Table = React.forwardRef(function Table(
                     groupRow.data.aggregation.line;
                   groupHeaderRowCell.children[0].children[0].children[2].textContent =
                     groupRow.data.aggregation.area.max;
-                  if (!_.isNil(groupRow.data.aggregation.area.stdDevValue)) {
+                  if (!isNil(groupRow.data.aggregation.area.stdDevValue)) {
                     groupHeaderRowCell.children[0].children[0].children[3].textContent =
                       groupRow.data.aggregation.area.stdDevValue;
                   }
-                  if (!_.isNil(groupRow.data.aggregation.area.stdErrValue)) {
+                  if (!isNil(groupRow.data.aggregation.area.stdErrValue)) {
                     groupHeaderRowCell.children[0].children[0].children[3].textContent =
                       groupRow.data.aggregation.area.stdErrValue;
                   }
@@ -524,7 +535,7 @@ const Table = React.forwardRef(function Table(
     const rightPane = tableContainerRef.current?.querySelector(
       '.Table__pane--right',
     );
-    let availableSpace = 0;
+    let availableSpace = tableContainerRef.current?.offsetWidth ?? 0;
 
     if (leftPane || rightPane) {
       availableSpace =
@@ -738,13 +749,21 @@ const Table = React.forwardRef(function Table(
     }
   }, [appName, sameValueColumns, hiddenColumns]);
 
+  const selectedRunsQuery: string = React.useMemo(() => {
+    if (!_.isEmpty(selectedRows)) {
+      return `run.hash in [${_.uniq(
+        Object.values(selectedRows)?.map((row: any) => `"${row.runHash}"`),
+      ).join(',')}]`;
+    }
+  }, [selectedRows]);
+
   // The right check is !props.isInfiniteLoading && (isLoading || isNil(rowData))
   // but after setting isInfiniteLoading to true, the rowData becomes null, unnecessary renders happening
   // @TODO sanitize this point
   return (
     <ErrorBoundary>
       {!isEmpty(rowData) ? (
-        <div style={{ height: '100%' }} className={className}>
+        <div style={{ height: '100%', width: '100%' }} className={className}>
           {!hideHeaderActions && isEmpty(selectedRows) ? (
             <div className='Table__header'>
               {showResizeContainerActionBar && (
@@ -819,6 +838,13 @@ const Table = React.forwardRef(function Table(
                     appName={appName}
                   />
                 )}
+                {onMetricsValueKeyChange && (
+                  <MetricsValueKeyPopover
+                    metricsValueKey={metricsValueKey}
+                    onMetricsValueKeyChange={onMetricsValueKeyChange}
+                    appName={appName}
+                  />
+                )}
               </div>
               {onTableDiffShow && (
                 <Button
@@ -847,7 +873,7 @@ const Table = React.forwardRef(function Table(
                 </div>
               )}
             </div>
-          ) : !isEmpty(selectedRows) && multiSelect ? (
+          ) : !hideHeaderActions && !isEmpty(selectedRows) && multiSelect ? (
             <div className='Table__header selectedRowActionsContainer'>
               <div className='selectedRowActionsContainer__selectedRowsCount'>
                 <Text size={14} tint={50}>
@@ -859,6 +885,7 @@ const Table = React.forwardRef(function Table(
                   <Button
                     color='secondary'
                     type='text'
+                    size='small'
                     onClick={onToggleDeletePopup}
                     className={`Table__header__item ${
                       isOpenDeleteSelectedPopup ? 'opened' : ''
@@ -876,6 +903,7 @@ const Table = React.forwardRef(function Table(
                   <Button
                     color='secondary'
                     type='text'
+                    size='small'
                     onClick={onToggleArchivePopup}
                     className={`Table__header__item ${
                       isOpenArchiveSelectedPopup ? 'opened' : ''
@@ -893,6 +921,7 @@ const Table = React.forwardRef(function Table(
                   <Button
                     color='secondary'
                     type='text'
+                    size='small'
                     onClick={onToggleUnarchivePopup}
                     className={`Table__header__item ${
                       isOpenUnarchiveSelectedPopup ? 'opened' : ''
@@ -910,6 +939,7 @@ const Table = React.forwardRef(function Table(
                   <Button
                     color='secondary'
                     type='text'
+                    size='small'
                     onClick={onHideSelectedItems}
                     className='Table__header__item'
                   >
@@ -935,6 +965,12 @@ const Table = React.forwardRef(function Table(
                   </Button>
                 </div>
               )}
+              <div>
+                <CompareSelectedRunsPopover
+                  appName={appName}
+                  query={selectedRunsQuery}
+                />
+              </div>
             </div>
           ) : (
             ''
@@ -968,13 +1004,16 @@ const Table = React.forwardRef(function Table(
                         columns={columnsData.filter((col) => !col.isHidden)}
                         onGroupExpandToggle={onGroupExpandToggle}
                         onRowHover={rowHoverHandler}
-                        onRowClick={rowClickHandler}
+                        onRowClick={
+                          showRowClickBehaviour ? rowClickHandler : undefined
+                        }
                         listWindow={listWindow}
                         multiSelect={multiSelect}
                         selectedRows={selectedRows || {}}
                         onRowSelect={onRowSelect}
                         columnsColorScales={columnsColorScales}
                         onToggleColumnsColorScales={onToggleColumnsColorScales}
+                        noColumnActions={noColumnActions}
                         {...props}
                       />
                     </ErrorBoundary>
@@ -1052,6 +1091,7 @@ const Table = React.forwardRef(function Table(
           size={illustrationConfig?.size || 'xLarge'}
           content={illustrationConfig?.content || ''}
           title={illustrationConfig?.title || ''}
+          showImage={illustrationConfig?.showImage}
         />
       )}
     </ErrorBoundary>
@@ -1069,6 +1109,10 @@ function propsComparator(
   }
 
   if (prevProps.rowHeight !== nextProps.rowHeight) {
+    return false;
+  }
+
+  if (prevProps.metricsValueKey !== nextProps.metricsValueKey) {
     return false;
   }
 

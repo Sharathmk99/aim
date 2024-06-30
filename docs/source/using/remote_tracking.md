@@ -1,16 +1,17 @@
-## Track experiments with aim remote server (experimental feature)
+## Track experiments with aim remote server
 
 ### Overview
 
 Aim remote tracking server allows running experiments in a multi-host environment and collect tracked data in a centralized location.
-It provides SDK for client-server communications and utilized [gRPC](https://grpc.io/about/) protocol as its core transport layer.
+It provides SDK for client-server communications and utilizes http/ws protocols as its core transport layer.
 
-In this guide we will show you how to setup Aim remote tracking server and how to integrate it in client-side code.
+In this guide we will show you how to set up Aim remote tracking server and how to integrate it in client-side code.
 
 ### Prerequisites
 
 Remote tracking server assumes multi-host environments used to run multiple training experiments.
-The machine running the server have to accept incoming TCP traffic on a dedicated port (default is 53800).
+The machine running the server have to accept incoming http traffic on a dedicated port (default is 53800).
+
 
 ### Server-side setup
 
@@ -201,16 +202,13 @@ with torch.no_grad():
     print('Test Accuracy: {} %'.format(100 * correct / total))
 ```
 
-### Message size limitations
-Aim Remote Tracking server uses gRPC as a transport layer. gRPC imposes message size limits on
-sending/receiving messages from/to server. Aim is configured to use 16MB message size limit by default.
-If you want to specify a different limit, use `__AIM_RT_MAX_MESSAGE_SIZE__` environment variable.
-```shell
-# max message size 128MB
-export __AIM_RT_MAX_MESSAGE_SIZE__=134217728
-```
+### SSL support 
 
-__*Note:*__ The message max size should be the same for both Aim Remote Tracking server and client code.
+Aim Remote Tracking server can be set up to use SSL certificates to run on secure mode.
+To enable secure mode for server provide `--ssl-keyfile` and `--ssl-certfile` arguments to `aim server `command,
+where `--ssl-keyfile` is the path to the private key file for the certificate and `--ssl-certfile` is the path to the signed certificate
+(check out the [Aim CLI](../refs/cli.html#server) here).
+
 
 ### Conclusion
 

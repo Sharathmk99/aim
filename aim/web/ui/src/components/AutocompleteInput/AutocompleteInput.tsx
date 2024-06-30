@@ -25,6 +25,7 @@ function AutocompleteInput({
   refObject,
   error,
   disabled = false,
+  forceRemoveError = false,
   //callback functions
   onEnter,
   onChange,
@@ -71,8 +72,12 @@ function AutocompleteInput({
 
   React.useEffect(() => {
     setMarkers();
+    if (forceRemoveError && !error) {
+      setErrorMessage('');
+      deleteMarkers();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [error, monaco]);
+  }, [error, monaco, forceRemoveError]);
 
   React.useEffect(() => {
     if (focused) {
@@ -174,6 +179,13 @@ function AutocompleteInput({
               formattedValue.length,
             );
         }
+        //@TODO: check why the onCHange function have been called in the  if (ev.changes[0].text === '\n') { scope
+        if (onChange) {
+          // formattedValue = hasSelection
+          //   ? editorValue.replace(/[\n\r]/g, '')
+          //   : formattedValue;
+          onChange(formattedValue, ev);
+        }
         if (ev.changes[0].text === '\n') {
           formattedValue = hasSelection
             ? editorValue.replace(/[\n\r]/g, '')
@@ -181,9 +193,6 @@ function AutocompleteInput({
           editorRef.current!.setValue(formattedValue);
           if (onEnter) {
             onEnter();
-          }
-          if (onChange) {
-            onChange(formattedValue, ev);
           }
           setEditorValue(formattedValue);
           return;

@@ -32,6 +32,8 @@ class SequenceInfo:
         self.initialized = False
         self.count = None
         self.dtype = None
+        self.max = None
+        self.min = None
         self.version = None
         self.val_view = None
         self.step_view = None
@@ -85,7 +87,7 @@ class RunTracker:
     def __call__(
         self,
         value,
-        name: str,
+        name: str = None,
         step: int = None,
         epoch: int = None,
         *,
@@ -107,7 +109,7 @@ class RunTracker:
         self,
         value,
         track_time: float,
-        name: str,
+        name: str = None,
         step: int = None,
         epoch: int = None,
         *,
@@ -116,23 +118,18 @@ class RunTracker:
         if context is None:
             context = {}
 
-        if is_number(value):
-            val = convert_to_py_number(value)
-        elif isinstance(value, (CustomObject, list, tuple)):
-            val = value
-        else:
-            raise ValueError(f'Input metric of type {type(value)} is neither python number nor AimObject')
-
+        values = self._normalized_values(value, name)
         with self.repo.atomic_track(self.hash):
             ctx = Context(context)
-            seq_info = self.sequence_infos[ctx.idx, name]
-            if not seq_info.initialized:
-                self._init_sequence_info(ctx.idx, name, val)
-            step = step if step is not None else seq_info.count
+            for name, val in values.items():
+                seq_info = self.sequence_infos[ctx.idx, name]
+                if not seq_info.initialized:
+                    self._init_sequence_info(ctx.idx, name, val)
+                step = step if step is not None else seq_info.count
 
-            self._update_context_data(ctx)
-            self._update_sequence_info(ctx.idx, name, val, step)
-            self._add_value(seq_info, val, step, epoch, track_time)
+                self._update_context_data(ctx)
+                self._update_sequence_info(ctx.idx, name, val, step)
+                self._add_value(seq_info, val, step, epoch, track_time)
 
     def _preload_sequence_infos(self):
         for ctx_id, traces in self.meta_run_tree.get('traces', {}).items():
@@ -164,6 +161,14 @@ class RunTracker:
         series_tree = self.series_run_trees[seq_info.version]
         if seq_info.version == 2:
             seq_info.step_view = series_tree.subtree((ctx_id, name)).array('step', dtype='int64')
+            try:
+                seq_info.max = self.meta_run_tree['traces', ctx_id, name, 'max']
+            except KeyError:
+                seq_info.max = float('-inf')
+            try:
+                seq_info.min = self.meta_run_tree['traces', ctx_id, name, 'min']
+            except KeyError:
+                seq_info.min = float('inf')
         seq_info.val_view = series_tree.subtree((ctx_id, name)).array('val')
         seq_info.epoch_view = series_tree.subtree((ctx_id, name)).array('epoch', dtype='int64')
         seq_info.time_view = series_tree.subtree((ctx_id, name)).array('time', dtype='int64')
@@ -188,6 +193,8 @@ class RunTracker:
         series_tree = self.series_run_trees[seq_info.version]
         if seq_info.version == 2:
             seq_info.step_view = series_tree.subtree((ctx_id, name)).array('step', dtype='int64').allocate()
+            seq_info.max = float('-inf')
+            seq_info.min = float('inf')
         seq_info.val_view = series_tree.subtree((ctx_id, name)).array('val').allocate()
         seq_info.epoch_view = series_tree.subtree((ctx_id, name)).array('epoch', dtype='int64').allocate()
         seq_info.time_view = series_tree.subtree((ctx_id, name)).array('time', dtype='int64').allocate()
@@ -216,6 +223,7 @@ class RunTracker:
             self.meta_tree['traces_types', dtype, ctx_id, name] = 1
             self.meta_run_tree['traces', ctx_id, name, 'dtype'] = dtype
             self.meta_run_tree['traces', ctx_id, name, 'version'] = seq_info.version
+            self.meta_run_tree['traces', ctx_id, name, 'first'] = val
             self.meta_run_tree['traces', ctx_id, name, 'first_step'] = step
             seq_info.dtype = dtype
 
@@ -224,6 +232,14 @@ class RunTracker:
             self.meta_run_tree['traces', ctx_id, name, 'last_step'] = step
             seq_info.count = step + 1
 
+        if seq_info.version == 2:
+            # min/max is supported only for metrics
+            if val > seq_info.max:
+                self.meta_run_tree['traces', ctx_id, name, 'max'] = val
+                seq_info.max = val
+            if val < seq_info.min:
+                self.meta_run_tree['traces', ctx_id, name, 'min'] = val
+                seq_info.min = val
         if isinstance(val, (tuple, list)):
             record_max_length = max(seq_info.record_max_length, len(val))
             self.meta_run_tree['traces', ctx_id, name, 'record_max_length'] = record_max_length
@@ -238,8 +254,27 @@ class RunTracker:
 
     def _add_value(self, seq_info, val, step, epoch, track_time):
         step_hash = seq_info.step_hash_fn(step)
-        if seq_info.step_view is not None:
-            seq_info.step_view[step_hash] = step
         seq_info.val_view[step_hash] = val
         seq_info.epoch_view[step_hash] = epoch
         seq_info.time_view[step_hash] = track_time
+        if seq_info.step_view is not None:
+            seq_info.step_view[step_hash] = step
+
+    @staticmethod
+    def _normalized_values(value, name):
+        def _normalize_single_value(val):
+            if is_number(val):
+                return convert_to_py_number(val)
+            elif isinstance(val, (CustomObject, list, tuple)):
+                return val
+            else:
+                raise ValueError(f'Input type {type(value)} is neither python number nor AimObject')
+
+        if isinstance(value, dict):
+            if name is not None:
+                raise ValueError('\'name\' should be None when tracking values dictionary.')
+            return {str(k): _normalize_single_value(v) for k, v in value.items()}
+        else:
+            if name is None:
+                raise ValueError('\'name\' should not be None.')
+            return {name: _normalize_single_value(value)}

@@ -15,9 +15,15 @@ class Project:
         self.repo_path = repo_path
         self.description = ''
         self.repo = Repo.from_path(self.repo_path)
+
+    def cleanup_repo_pools(self):
         self.repo.container_pool.clear()
         self.repo.container_view_pool.clear()
         self.repo.persistent_pool.clear()
+
+    def cleanup_sql_caches(self):
+        for cache in self.repo.structured_db.caches.values():
+            cache.empty_cache()
 
     def exists(self):
         """

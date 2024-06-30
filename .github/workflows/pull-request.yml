@@ -12,6 +12,7 @@ on:
       - 'aim/sdk/**'
       - 'aim/web/api/**'
       - 'aim/storage/**'
+      - 'aim/utils/**'
       - '.github/workflows/pull-request.yml'
       - 'tests/**'
       - 'performance_tests/**'
@@ -29,7 +30,7 @@ jobs:
     steps:
       - uses: deepakputhraya/action-pr-title@master
         with:
-          regex: '^\[(?:feat|fix|doc|refactor)\]\s[A-Z].*(?<!\.)$'
+          regex: '^\[(?:feat|fix|doc|refactor|deprecation)\]\s[A-Z].*(?<!\.)$'
           github_token: ${{ github.token }}
   run-checks:
     if: github.event.pull_request.draft == false && github.event.action != 'edited'
@@ -45,7 +46,7 @@ jobs:
       - name: setup python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.6'
+          python-version: '3.7'
           architecture: x64
 
       - name: install deps

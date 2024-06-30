@@ -6,14 +6,9 @@ import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 
 import { IHighlightModesPopoverProps } from 'types/components/HighlightModesPopover/HighlightModesPopover';
 
-import './HighlightModePopover.scss';
+import { HighlightEnum } from 'utils/d3';
 
-export enum HighlightEnum {
-  Off = 0,
-  Run = 1,
-  Metric = 2,
-  Custom = 3,
-}
+import './HighlightModePopover.scss';
 
 function HighlightModesPopover({
   mode,
@@ -37,15 +32,15 @@ function HighlightModesPopover({
           Highlight Off
         </MenuItem>
         <MenuItem
-          data-name={HighlightEnum.Run}
-          selected={mode === HighlightEnum.Run}
+          data-name={HighlightEnum.Metric}
+          selected={mode === HighlightEnum.Metric}
           onClick={handleClick}
         >
           Highlight Metric on Hover
         </MenuItem>
         <MenuItem
-          data-name={HighlightEnum.Metric}
-          selected={mode === HighlightEnum.Metric}
+          data-name={HighlightEnum.Run}
+          selected={mode === HighlightEnum.Run}
           onClick={handleClick}
         >
           Highlight Run On Hover

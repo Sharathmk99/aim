@@ -1,17 +1,38 @@
 import os
+import importlib.util
 from typing import Any, Dict, Optional, Union
 from argparse import Namespace
 
-try:
-    from pytorch_lightning.loggers.base import (
-        LightningLoggerBase,
-        rank_zero_experiment,
+import packaging.version
+
+if importlib.util.find_spec("lightning"):
+    import lightning.pytorch as pl
+
+    from lightning.pytorch.loggers.logger import (
+        Logger, rank_zero_experiment
     )
+
+    from lightning.pytorch.utilities import rank_zero_only
+elif importlib.util.find_spec("pytorch_lightning"):
+    import pytorch_lightning as pl
+
+    if packaging.version.parse(pl.__version__) < packaging.version.parse("1.7"):
+        from pytorch_lightning.loggers.base import (
+            LightningLoggerBase as Logger,
+            rank_zero_experiment,
+        )
+    else:
+        from pytorch_lightning.loggers.logger import (
+            Logger,
+            rank_zero_experiment,
+        )
+
     from pytorch_lightning.utilities import rank_zero_only
-except ImportError:
+else:
     raise RuntimeError(
         'This contrib module requires PyTorch Lightning to be installed. '
         'Please install it with command: \n pip install pytorch-lightning'
+        'or \n pip install lightning'
     )
 
 from aim.sdk.run import Run
@@ -20,7 +41,7 @@ from aim.sdk.utils import clean_repo_path, get_aim_repo_name
 from aim.ext.resource.configs import DEFAULT_SYSTEM_TRACKING_INT
 
 
-class AimLogger(LightningLoggerBase):
+class AimLogger(Logger):
     def __init__(self,
                  repo: Optional[str] = None,
                  experiment: Optional[str] = None,
@@ -29,11 +50,15 @@ class AimLogger(LightningLoggerBase):
                  test_metric_prefix: Optional[str] = 'test_',
                  system_tracking_interval: Optional[int]
                  = DEFAULT_SYSTEM_TRACKING_INT,
-                 log_system_params: bool = True,
+                 log_system_params: Optional[bool] = True,
+                 capture_terminal_logs: Optional[bool] = True,
+                 run_name: Optional[str] = None,
+                 run_hash: Optional[str] = None,
                  ):
         super().__init__()
 
         self._experiment_name = experiment
+        self._run_name = run_name
         self._repo_path = repo
 
         self._train_metric_prefix = train_metric_prefix
@@ -41,9 +66,10 @@ class AimLogger(LightningLoggerBase):
         self._test_metric_prefix = test_metric_prefix
         self._system_tracking_interval = system_tracking_interval
         self._log_system_params = log_system_params
+        self._capture_terminal_logs = capture_terminal_logs
 
         self._run = None
-        self._run_hash = None
+        self._run_hash = run_hash
 
     @staticmethod
     def _convert_params(params: Union[Dict[str, Any], Namespace]) -> Dict[str, Any]:
@@ -65,6 +91,8 @@ class AimLogger(LightningLoggerBase):
                     self._run_hash,
                     repo=self._repo_path,
                     system_tracking_interval=self._system_tracking_interval,
+                    capture_terminal_logs=self._capture_terminal_logs,
+                    force_resume=True
                 )
             else:
                 self._run = Run(
@@ -72,8 +100,11 @@ class AimLogger(LightningLoggerBase):
                     experiment=self._experiment_name,
                     system_tracking_interval=self._system_tracking_interval,
                     log_system_params=self._log_system_params,
+                    capture_terminal_logs=self._capture_terminal_logs,
                 )
                 self._run_hash = self._run.hash
+            if self._run_name is not None:
+                self._run.name = self._run_name
         return self._run
 
     @rank_zero_only
@@ -99,7 +130,14 @@ class AimLogger(LightningLoggerBase):
         assert rank_zero_only.rank == 0, \
             'experiment tried to log from global_rank != 0'
 
-        for k, v in metrics.items():
+        metric_items: Dict[str: Any] = {k: v for k, v in metrics.items()}
+
+        if 'epoch' in metric_items:
+            epoch: int = metric_items.pop('epoch')
+        else:
+            epoch = None
+
+        for k, v in metric_items.items():
             name = k
             context = {}
             if self._train_metric_prefix \
@@ -114,7 +152,7 @@ class AimLogger(LightningLoggerBase):
                     and name.startswith(self._val_metric_prefix):
                 name = name[len(self._val_metric_prefix):]
                 context['subset'] = 'val'
-            self.experiment.track(v, name=name, step=step, context=context)
+            self.experiment.track(v, name=name, step=step, epoch=epoch, context=context)
 
     @rank_zero_only
     def finalize(self, status: str = '') -> None:

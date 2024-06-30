@@ -162,6 +162,28 @@ Adapter source can be found [here](https://github.com/aimhubio/aim/blob/main/aim
 Example using Keras can be found [here](https://github.com/aimhubio/aim/blob/main/examples/keras_track.py).  
 Example using tf.Keras can be found [here](https://github.com/aimhubio/aim/blob/main/examples/tensorflow_keras_track.py).
 
+
+### Integration with Keras Tuner
+
+It only takes 2 steps to easily integrate aim in keras to record experimental information.
+
+```python
+from aim.keras_tuner import AimCallback
+```
+
+In kerastuner, we call the `search()` method of the tuner object to perform a search for best hyperparameter configuations. The callbacks are provided here. `AimCallback` inherits the usage specification of callbacks. We just need to add it to the callbacks list.
+
+```python
+tuner.search(
+    train_ds,
+    validation_data=test_ds,
+    callbacks=[AimCallback(tuner=tuner, repo='./aim_logs', experiment='keras_tuner_test')],
+)
+```
+
+Adapter source can be found [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/keras_tuner.py).  
+Example using Keras Tuner can be found [here](https://github.com/aimhubio/aim/blob/main/examples/keras_tuner_track.py).  
+
 ### Integration with XGboost
 
 <!--In the real world, there is a well-known handwritten digit recognition problem. In this article, we use the machine learning framework xgboost to help us train an image classification model. In this process, we will use Aim to track our experimental data.-->
@@ -240,6 +262,194 @@ time.
 See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/lightgbm.py).  
 Check out a simple regression task example [here](https://github.com/aimhubio/aim/blob/main/examples/lightgbm_track.py).
 
+### Integration with fastai
+
+Aim comes with a builtin callback designed to automatically track [fastai](https://docs.fast.ai/) trainings.
+It takes two steps to integrate Aim into your training script.
+
+Step 1: Explicitly import the `AimCallback` for tracking training metadata.
+
+```python
+from aim.fastai import AimCallback
+```
+
+Step 2: Pass the callback to `cbs` list upon initiating your training.
+
+```python
+learn = cnn_learner(dls, resnet18, pretrained=True,
+                    loss_func=CrossEntropyLossFlat(),
+                    metrics=accuracy, model_dir="/tmp/model/",
+                    cbs=AimCallback(repo='.', experiment='fastai_example'))
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/fastai.py).  
+Check out a simple regression task example [here](https://github.com/aimhubio/aim/blob/main/examples/fastai_track.py).
+
+
+### Integration with MXNet
+
+To track MXNet experiments use Aim callback designed for [MXNet](https://mxnet.apache.org/) fit method.
+It takes two steps to integrate Aim into your training script.
+
+Step 1: Import the `AimLoggingHandler` for tracking training metadata.
+
+```python
+from aim.mxnet import AimLoggingHandler
+```
+
+Step 2: Pass a callback instance to `event_handlers` list upon initiating your training.
+
+```python
+aim_log_handler = AimLoggingHandler(repo='.', experiment_name='mxnet_example',
+                                    log_interval=1, metrics=[train_acc, train_loss, val_acc])
+
+est.fit(train_data=train_data_loader, val_data=val_data_loader,
+        epochs=num_epochs, event_handlers=[aim_log_handler])
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/mxnet.py).  
+Check out a simple regression task example [here](https://github.com/aimhubio/aim/blob/main/examples/mxnet_track.py).
+
+
+### Integration with Optuna
+
+Aim provides a callback designed to automatically track [optuna](https://optuna.org/) trainings.
+The `as_multirun` is a boolean argument. If `as_multirun` is set True then the callback will create a run for each trial. Otherwise it will track all of the results in a single run.
+One can also use the decorator function `track_in_aim` to log inside the objective function.
+
+Step 1: Explicitly import the `AimCallback` for tracking training metadata.
+
+```python
+from aim.optuna import AimCallback
+```
+
+Step 2: Pass the callback to `cbs` list upon initiating your training.
+
+```python
+aim_callback = AimCallback(experiment_name="optuna_single_run")
+study.optimize(objective, n_trials=10, callbacks=[aim_callback])
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/optuna.py).  
+Check out a simple objective optimization example [here](https://github.com/aimhubio/aim/blob/main/examples/optuna_track.py).
+
+### Integration with PaddlePaddle
+
+Aim provides a built in callback to easily track [PaddlePaddle](https://www.paddlepaddle.org.cn/en) trainings.
+It takes two steps to integrate Aim into your training script.
+
+Step 1: Explicitly import the `AimCallback` for tracking training metadata.
+
+```python
+from aim.paddle import AimCallback
+```
+
+Step 2: Pass the callback to `callbacks` list upon initiating your training.
+
+```python
+callback = AimCallback(repo='.', experiment='paddle_test')
+model.fit(train_dataset, eval_dataset, batch_size=64, callbacks=callback)
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/paddle.py).  
+Check out a simple objective optimization example [here](https://github.com/aimhubio/aim/blob/main/examples/paddle_track.py).
+
+
+
+### Integration with Stable-Baselines3
+
+Aim provides a callback to easily track one of the reliable Reinforcement Learning implementations [Stable-Baselines3](https://stable-baselines3.readthedocs.io/en/master/) trainings.
+It takes two steps to integrate Aim into your training script.
+
+Step 1: Explicitly import the `AimCallback` for tracking training metadata.
+
+```python
+from aim.sb3 import AimCallback
+```
+
+Step 2: Pass the callback to `callback` upon initiating your training.
+
+```python
+model.learn(total_timesteps=10_000, callback=AimCallback(repo='.', experiment_name='sb3_test'))
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/sb3.py).  
+Check out a simple objective optimization example [here](https://github.com/aimhubio/aim/blob/main/examples/sb3_track.py).
+
+
+
+### Integration with Acme
+
+Aim provides a built in callback to easily track [Acme](https://dm-acme.readthedocs.io/en/latest/) trainings.
+It takes few simple steps to integrate Aim into your training script.
+
+Step 1: Explicitly import the `AimCallback` and `AimWriter` for tracking training metadata.
+
+```python
+from aim.sdk.acme import AimCallback, AimWriter
+```
+
+Step 2: Initialize an Aim Run via `AimCallback`, and create a log factory using the Run.
+
+```python
+aim_run = AimCallback(repo=".", experiment_name="acme_test")
+def logger_factory(
+    name: str,
+    steps_key: Optional[str] = None,
+    task_id: Optional[int] = None,
+) -> loggers.Logger:
+    return AimWriter(aim_run, name, steps_key, task_id)
+```
+
+Step 3: Pass the logger factory to `logger_factory` upon initiating your training.
+
+```python
+experiment_config = experiments.ExperimentConfig(
+    builder=d4pg_builder,
+    environment_factory=make_environment,
+    network_factory=network_factory,
+    logger_factory=logger_factory,
+    seed=0,
+    max_num_actor_steps=5000)
+```
+
+See `AimCallback` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/acme.py).  
+Check out a simple objective optimization example [here](https://github.com/aimhubio/aim/blob/main/examples/acme_track.py).
+
+
+### Integration with Prophet
+
+Aim provides an AimLogger object designed to track [Prophet](https://facebook.github.io/prophet/docs/quick_start.html) hyperparameters and metrics.
+It takes three steps to integrate Aim into your Prophet script.
+
+Step 1: Explicitly import the `AimLogger`.
+
+```python
+from aim.prophet import AimLogger
+```
+
+Step 2: After initializing a Prophet model, instantiate the AimLogger with your Prophet model.
+
+```python
+model = Prophet()
+logger = AimLogger(prophet_model=model, repo=".", experiment="prophet_test")
+```
+
+Step 3 (optional): pass any metrics you want after fitting the Prophet model.
+
+```python
+metrics = {"backtest_mse": backtest_mse, "backtest_mape": backtest_mape}
+logger.track_metrics(metrics)
+```
+Note that the metrics are assumed to be validation metrics by default. Alternatively, you can pass a `context` argument to the track_metrics method. 
+
+```python
+metrics = {"train_mse": backtest_mse, "train_mape": backtest_mape}
+logger.track_metrics(metrics, context={"subset": "train"})
+```
+
+See `AimLogger` source [here](https://github.com/aimhubio/aim/blob/main/aim/sdk/adapters/prophet.py).  
+Check out a simple example [here](https://github.com/aimhubio/aim/blob/main/examples/prophet_track.py).
 ### What's next?
 
 During the training process, you can start another terminal in the same directory, start `aim up` and you can observe

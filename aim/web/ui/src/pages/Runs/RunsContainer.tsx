@@ -1,11 +1,10 @@
 import React, { memo } from 'react';
 import { useHistory } from 'react-router-dom';
+import { useModel } from 'hooks';
 
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 
 import { ANALYTICS_EVENT_KEYS } from 'config/analytics/analyticsKeysMap';
-
-import useModel from 'hooks/model/useModel';
 
 import runsAppModel from 'services/models/runs/runsAppModel';
 import * as analytics from 'services/analytics';
@@ -41,7 +40,7 @@ function RunsContainer(): React.FunctionComponentElement<React.ReactNode> {
   React.useEffect(() => {
     runsAppModel.initialize();
     analytics.pageView(ANALYTICS_EVENT_KEYS.runs.pageView);
-    const unListenHistory = history.listen((location) => {
+    const unListenHistory = history.listen(() => {
       if (!!runsData?.config!) {
         if (
           runsData.config.select !== getStateFromUrl('search') &&
@@ -69,6 +68,7 @@ function RunsContainer(): React.FunctionComponentElement<React.ReactNode> {
         onSelectRunQueryChange={runsAppModel.onSelectRunQueryChange}
         onToggleColumnsColorScales={runsAppModel.onToggleColumnsColorScales}
         tableRowHeight={runsData?.config?.table?.rowHeight}
+        metricsValueKey={runsData?.config?.table?.metricsValueKey}
         sameValueColumns={runsData?.sameValueColumns!}
         tableRef={tableRef}
         columnsOrder={runsData?.config?.table.columnsOrder}
@@ -94,6 +94,7 @@ function RunsContainer(): React.FunctionComponentElement<React.ReactNode> {
         onRowSelect={runsAppModel.onRowSelect}
         archiveRuns={runsAppModel.archiveRuns}
         deleteRuns={runsAppModel.deleteRuns}
+        onMetricsValueKeyChange={runsAppModel.onMetricsValueKeyChange}
       />
     </ErrorBoundary>
   );

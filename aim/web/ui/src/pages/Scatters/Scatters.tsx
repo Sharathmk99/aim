@@ -43,8 +43,8 @@ function Scatters(
   const [isProgressBarVisible, setIsProgressBarVisible] =
     React.useState<boolean>(false);
   const chartProps: any[] = React.useMemo(() => {
-    return (props.scatterPlotData || []).map((data: any, index: number) => ({
-      chartTitle: props.chartTitleData[index],
+    return (props.scatterPlotData || []).map((chartData: any) => ({
+      chartTitle: props.chartTitleData[chartData.data[0]?.chartIndex],
       trendlineOptions: props.trendlineOptions,
     }));
   }, [props.scatterPlotData, props.chartTitleData, props.trendlineOptions]);
@@ -136,6 +136,8 @@ function Scatters(
                         chartProps={chartProps}
                         resizeMode={props.resizeMode}
                         selectOptions={props.groupingSelectOptions}
+                        onRunsTagsChange={props.onRunsTagsChange}
+                        onChangeTooltip={props.onChangeTooltip}
                         controls={
                           <Controls
                             chartProps={chartProps}

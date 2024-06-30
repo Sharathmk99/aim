@@ -7,8 +7,7 @@ from aim.storage.container import Container
 from aim.storage import treeutils
 from aim.storage.treearrayview import TreeArrayView
 
-from typing import Any, Iterator, Tuple, Union, List
-
+from typing import Any, Iterator, Tuple, Union
 from aim.storage.treeview import TreeView
 
 
@@ -107,7 +106,7 @@ class ContainerTreeView(TreeView):
     def keys_eager(
             self,
             path: Union[AimObjectKey, AimObjectPath] = (),
-    ) -> List[Union[AimObjectPath, AimObjectKey]]:
+    ):
         return list(self.subtree(path).keys())
 
     def keys(
@@ -139,10 +138,7 @@ class ContainerTreeView(TreeView):
     def items_eager(
             self,
             path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> List[Tuple[
-        AimObjectKey,
-        AimObject
-    ]]:
+    ):
         return list(self.subtree(path).items())
 
     def items(
@@ -178,20 +174,20 @@ class ContainerTreeView(TreeView):
     ) -> TreeArrayView:
         return TreeArrayView(self.subtree(path), dtype=dtype)
 
-    def first(
+    def first_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
+    ) -> AimObjectKey:
         if isinstance(path, (int, str)):
             path = (path,)
         prefix = E.encode_path(path)
         p = E.decode_path(self.container.view(prefix).next_key())
         return p[0]
 
-    def last(
+    def last_key(
         self,
         path: Union[AimObjectKey, AimObjectPath] = ()
-    ) -> Tuple[AimObjectKey, AimObject]:
+    ) -> AimObjectKey:
         if isinstance(path, (int, str)):
             path = (path,)
         prefix = E.encode_path(path)

@@ -12,6 +12,7 @@ import useRunMetricsBatch from '../hooks/useRunMetricsBatch';
 
 import GitInfoCard from './components/GitInfoCard';
 import RunOverviewTabMetricsCard from './components/MetricsCard/RunOverviewTabMetricsCard';
+import RunOverviewTabArtifactsCard from './components/ArtifactsCard/RunOverviewTabArtifactsCard';
 import RunOverviewTabPackagesCard from './components/Packages/RunOverviewTabPackagesCard';
 import RunOverviewTabParamsCard from './components/ParamsCard/RunOverviewTabParamsCard';
 import RunOverviewSidebar from './components/RunOverviewSidebar/RunOverviewSidebar';
@@ -28,7 +29,6 @@ function RunOverviewTab({ runData, runHash }: IRunOverviewTabProps) {
   const [containerHeight, setContainerHeight] = React.useState<number>(0);
 
   useRunMetricsBatch({
-    runBatch: runData.runMetricsBatch,
     runTraces: runData.runTraces,
     runHash,
   });
@@ -50,6 +50,9 @@ function RunOverviewTab({ runData, runHash }: IRunOverviewTabProps) {
     }
     if (!_.isEmpty(runData?.runSystemBatch)) {
       data.runSystemBatch = runData.runSystemBatch;
+    }
+    if (!_.isEmpty(runData?.runArtifacts)) {
+      data.artifacts = runData.runArtifacts;
     }
     if (systemParams) {
       if (!_.isEmpty(systemParams.arguments)) {
@@ -112,6 +115,14 @@ function RunOverviewTab({ runData, runHash }: IRunOverviewTabProps) {
                     isLoading={runData?.isRunBatchLoading}
                     type='systemMetric'
                     runBatch={cardsData?.runSystemBatch}
+                  />
+                </ErrorBoundary>
+              )}
+              {_.isEmpty(cardsData.artifacts) ? null : (
+                <ErrorBoundary>
+                  <RunOverviewTabArtifactsCard
+                    artifacts={cardsData.artifacts}
+                    isRunInfoLoading={runData?.isRunInfoLoading}
                   />
                 </ErrorBoundary>
               )}

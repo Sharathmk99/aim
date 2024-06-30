@@ -4,6 +4,8 @@ export interface IProject {
   name?: string;
   path?: string;
   telemetry_enabled?: string | boolean;
+  warn_index?: boolean;
+  warn_runs?: boolean;
 }
 
 export interface IProjectParamsMetrics {
@@ -17,4 +19,14 @@ export interface IProjectsModelState {
   params?: IProjectParamsMetrics['params'];
   images?: IProjectParamsMetrics['params'];
   metrics?: IProjectParamsMetrics['metric'];
+  pinnedSequences: IPinnedSequence[];
+}
+
+export interface IPinnedSequence {
+  name: string;
+  context: { [key: string]: unknown };
+}
+
+export interface IPinnedSequencesResData {
+  sequences: IPinnedSequence[];
 }

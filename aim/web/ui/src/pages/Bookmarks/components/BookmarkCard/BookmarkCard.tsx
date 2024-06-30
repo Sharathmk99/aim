@@ -17,9 +17,10 @@ import { IBookmarkCardProps } from 'types/pages/bookmarks/components/BookmarkCar
 
 import './BookmarkCard.scss';
 
-const BookmarkIconType: {
+export const BookmarkIconType: {
   [key: string]: { name: IconName; tooltipTitle: string };
 } = {
+  runs: { name: 'runs', tooltipTitle: 'Runs Explorer' },
   images: { name: 'images', tooltipTitle: 'Images Explorer' },
   params: { name: 'params', tooltipTitle: 'Params Explorer' },
   metrics: { name: 'metrics', tooltipTitle: 'Metrics Explorer' },
@@ -123,7 +124,8 @@ function BookmarkCard({
             })}
           </div>
         ) : null}
-        {select.query || select.advancedQuery ? (
+        {(!select.advancedMode && select.query) ||
+        (select.advancedMode && select.advancedQuery) ? (
           <div className='BookmarkCard__bottom'>
             <div className='BookmarkCard__run__expression'>
               <CodeBlock

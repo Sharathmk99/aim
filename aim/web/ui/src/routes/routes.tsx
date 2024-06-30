@@ -9,6 +9,9 @@ const Runs = React.lazy(
 const RunDetail = React.lazy(
   () => import(/* webpackChunkName: "run" */ 'pages/RunDetail/RunDetail'),
 );
+const Experiment = React.lazy(
+  () => import(/* webpackChunkName: "run" */ 'pages/Experiment/Experiment'),
+);
 const Metrics = React.lazy(
   () =>
     import(/* webpackChunkName: "metrics" */ 'pages/Metrics/MetricsContainer'),
@@ -22,8 +25,8 @@ const Bookmarks = React.lazy(
       /* webpackChunkName: "bookmarks" */ 'pages/Bookmarks/BookmarksContainer'
     ),
 );
-const Home = React.lazy(
-  () => import(/* webpackChunkName: "home" */ 'pages/Home/HomeContainer'),
+const Dashboard = React.lazy(
+  () => import(/* webpackChunkName: "dashboard" */ 'pages/Dashboard/Dashboard'),
 );
 const TagsContainer = React.lazy(
   () => import(/* webpackChunkName: "tags" */ 'pages/Tags/TagsContainer'),
@@ -40,6 +43,19 @@ const ImagesExplore = React.lazy(
       /* webpackChunkName: "images" */ 'pages/ImagesExplore/ImagesExplore'
     ),
 );
+const FiguresExplore = React.lazy(
+  () => import(/* webpackChunkName: "figures" */ 'pages/FiguresExplorer'),
+);
+const AudiosExplorer = React.lazy(
+  () => import(/* webpackChunkName: "audios" */ 'pages/AudiosExplorer'),
+);
+const MetricsExplorer = React.lazy(
+  () => import(/* webpackChunkName: "metrics_v2" */ 'pages/MetricsExplorer'),
+);
+
+const TextExplorer = React.lazy(
+  () => import(/* webpackChunkName: "text" */ 'pages/TextExplorer'),
+);
 
 export interface IRoute {
   path: PathEnum;
@@ -54,13 +70,14 @@ export interface IRoute {
 }
 
 const routes = {
-  HOME: {
-    path: PathEnum.Home,
-    component: Home,
+  DASHBOARD: {
+    path: PathEnum.Dashboard,
+    component: Dashboard,
     showInSidebar: false,
-    displayName: null,
+    displayName: 'Dashboard',
+    icon: 'dashboard',
     isExact: true,
-    title: pageTitlesEnum.HOME,
+    title: pageTitlesEnum.DASHBOARD,
   },
   RUNS: {
     path: PathEnum.Runs,
@@ -105,6 +122,15 @@ const routes = {
     isExact: true,
     title: pageTitlesEnum.PARAMS_EXPLORER,
   },
+  TEXT_EXPLORER: {
+    path: PathEnum.Text_Explorer,
+    component: TextExplorer,
+    showInSidebar: true,
+    icon: 'text',
+    displayName: 'Text',
+    isExact: true,
+    title: pageTitlesEnum.TEXT_EXPLORER,
+  },
   IMAGE_EXPLORE: {
     path: PathEnum.Images_Explore,
     component: ImagesExplore,
@@ -121,6 +147,24 @@ const routes = {
     displayName: 'ImagesId',
     isExact: true,
     title: pageTitlesEnum.IMAGES_EXPLORER,
+  },
+  FIGURES_EXPLORER: {
+    path: PathEnum.Figures_Explorer,
+    component: FiguresExplore,
+    showInSidebar: true,
+    icon: 'figures',
+    displayName: 'Figures',
+    isExact: true,
+    title: pageTitlesEnum.FIGURES_EXPLORER,
+  },
+  AUDIOS_EXPLORER: {
+    path: PathEnum.Audios_Explorer,
+    component: AudiosExplorer,
+    showInSidebar: true,
+    icon: 'audios',
+    displayName: 'Audios',
+    isExact: true,
+    title: pageTitlesEnum.AUDIOS_EXPLORER,
   },
   SCATTERS: {
     path: PathEnum.Scatters,
@@ -164,6 +208,23 @@ const routes = {
     displayName: 'Run Detail',
     isExact: false,
     title: pageTitlesEnum.RUN_DETAIL,
+  },
+  Experiment: {
+    path: PathEnum.Experiment,
+    component: Experiment,
+    showInSidebar: false,
+    displayName: 'Experiment',
+    isExact: false,
+    title: pageTitlesEnum.EXPERIMENT,
+  },
+  METRICS_EXPLORER: {
+    path: PathEnum.Metrics_Explorer,
+    component: MetricsExplorer,
+    showInSidebar: false,
+    icon: 'metrics',
+    displayName: 'Metrics_v2',
+    isExact: true,
+    title: pageTitlesEnum.METRICS_EXPLORER_V2,
   },
 };
 

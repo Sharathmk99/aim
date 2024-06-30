@@ -20,6 +20,41 @@ provided by the package:
 - [Text](#text-tracking-with-aim)
 - [Figure](#figure-tracking-with-aim)
 
+### Tracking multiple values
+Starting from `v3.14.0` Aim provides ability to track multiple values at once. To track multiple values of different 
+sequences of the same context, just pass a dictionary of `<name: value>` pairs to the track method:
+
+```python
+aim_run.track({'accuracy': 98.2, 'loss': 0.001}, context={'subset': 'train'}, step=10, epoch=1)
+```
+
+>  Note: The `name` argument should be set to `None` in this case.
+
+**More examples**
+
+The following code snippet
+
+```shell
+from aim import Run
+
+aim_run = Run()
+
+metrics = {'accuracy': 0.72, 'f1': 0.99}
+for metric, val in metrics.items()
+  aim_run.track(val, name=metric, context={'subset': 'train'})
+```
+
+can be simplified to:
+
+```shell
+from aim import Run
+
+aim_run = Run()
+
+aim_run.track({'accuracy': 0.72, 'f1': 0.99}, context={'subset': 'train'})
+```
+
+
 ### Distribution tracking with Aim
 
 You can store distribution objects in Aim repository using our `aim.Distribution` object.
@@ -353,4 +388,23 @@ If we apply our previous code snippet on the same repo - we can observe the same
         'prc.json', 'roc.json', 'scores.json', 'src'
     ]
 }
+```
+
+### Logging huggingface/datasets dataset info with Aim
+
+Aim provides wrapper object for `datasets`. It allows to store the dataset info as a `Run`
+parameter and retrieve it later just as any other `Run` param. Here is an example of using Aim to log dataset info:
+
+```python
+from datasets import load_dataset
+
+from aim import Run
+from aim.hf_dataset import HFDataset
+
+# create dataset object
+dataset = load_dataset('rotten_tomatoes')
+
+# store dataset metadata
+run = Run()
+run['datasets_info'] = HFDataset(dataset)
 ```

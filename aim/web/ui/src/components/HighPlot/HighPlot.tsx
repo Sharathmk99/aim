@@ -1,11 +1,10 @@
 import React from 'react';
 import _ from 'lodash-es';
+import { useResizeObserver } from 'hooks';
 
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 
 import { RENDER_LINES_OPTIMIZED_LIMIT } from 'config/charts';
-
-import useResizeObserver from 'hooks/window/useResizeObserver';
 
 import { IFocusedState } from 'types/services/models/metrics/metricsAppModel';
 import { IHighPlotProps } from 'types/components/HighPlot/HighPlot';
@@ -27,7 +26,8 @@ const HighPlot = React.forwardRef(function HighPlot(
   ref,
 ): React.FunctionComponentElement<React.ReactNode> {
   const {
-    index = 0,
+    index,
+    id = `${index}`,
     nameKey = '',
     curveInterpolation,
     syncHoverState,
@@ -36,18 +36,20 @@ const HighPlot = React.forwardRef(function HighPlot(
     chartTitle,
     onAxisBrushExtentChange,
     brushExtents,
-    readOnly = false,
     resizeMode,
-  } = props;
-
-  // boxes
-  const visBoxRef = React.useRef({
-    margin: {
+    onMount,
+    readOnly = false,
+    margin = {
       top: 64,
       right: 60,
       bottom: 30,
       left: 60,
     },
+  } = props;
+
+  // boxes
+  const visBoxRef = React.useRef({
+    margin,
     height: 0,
     width: 0,
   });
@@ -76,9 +78,20 @@ const HighPlot = React.forwardRef(function HighPlot(
   const brushRef = React.useRef<any>({});
   const rafIDRef = React.useRef<number>();
 
+  const updateDeps = [
+    data,
+    curveInterpolation,
+    index,
+    isVisibleColorIndicator,
+    readOnly,
+    resizeMode,
+    id,
+  ];
+
   function draw() {
     drawArea({
       index,
+      id,
       nameKey,
       visBoxRef,
       plotBoxRef,
@@ -134,6 +147,7 @@ const HighPlot = React.forwardRef(function HighPlot(
         drawParallelHoverAttributes({
           dimensions: data.dimensions,
           index,
+          id,
           nameKey,
           visAreaRef,
           linesRef,
@@ -177,14 +191,7 @@ const HighPlot = React.forwardRef(function HighPlot(
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      data,
-      curveInterpolation,
-      index,
-      isVisibleColorIndicator,
-      readOnly,
-      resizeMode,
-    ],
+    updateDeps,
   );
 
   const observerReturnCallback = React.useCallback(() => {
@@ -203,14 +210,14 @@ const HighPlot = React.forwardRef(function HighPlot(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    data,
-    curveInterpolation,
-    index,
-    isVisibleColorIndicator,
-    readOnly,
-    resizeMode,
-  ]);
+  }, updateDeps);
+
+  React.useEffect(() => {
+    if (typeof onMount === 'function') {
+      onMount();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useImperativeHandle(ref, () => ({
     clearHoverAttributes: () => {
@@ -218,7 +225,10 @@ const HighPlot = React.forwardRef(function HighPlot(
     },
     setFocusedState: (focusedState: IFocusedState) => {
       const prevFocusState = { ...attributesRef.current.focusedState };
-      attributesRef.current.focusedState = focusedState;
+      attributesRef.current.focusedState = {
+        ...focusedState,
+        visId: focusedState.visId ?? `${focusedState.chartIndex}`,
+      };
 
       if (
         !_.isEmpty(brushExtents) &&

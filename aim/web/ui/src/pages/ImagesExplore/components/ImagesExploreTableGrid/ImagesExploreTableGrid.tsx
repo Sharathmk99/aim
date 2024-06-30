@@ -1,5 +1,6 @@
 import moment from 'moment';
 import _ from 'lodash-es';
+import * as React from 'react';
 
 import { Tooltip } from '@material-ui/core';
 
@@ -9,6 +10,8 @@ import ControlPopover from 'components/ControlPopover/ControlPopover';
 import ErrorBoundary from 'components/ErrorBoundary/ErrorBoundary';
 import GroupedColumnHeader from 'components/Table/GroupedColumnHeader';
 import RunNameColumn from 'components/Table/RunNameColumn';
+import AttachedTagsList from 'components/AttachedTagsList/AttachedTagsList';
+import ExperimentNameBox from 'components/ExperimentNameBox';
 
 import COLORS from 'config/colors/colors';
 import { TABLE_DATE_FORMAT } from 'config/dates/dates';
@@ -19,6 +22,7 @@ import { AppNameEnum } from 'services/models/explorer';
 import { ITableColumn } from 'types/pages/metrics/components/TableColumns/TableColumns';
 import { IGroupingSelectOption } from 'types/services/models/imagesExplore/imagesExploreAppModel';
 import { IOnGroupingSelectChangeParams } from 'types/services/models/metrics/metricsAppModel';
+import { ITagInfo } from 'types/pages/tags/Tags';
 
 import contextToString from 'utils/contextToString';
 import { formatValue } from 'utils/formatValue';
@@ -28,7 +32,7 @@ import getColumnOptions from 'utils/getColumnOptions';
 function getImagesExploreTableColumns(
   paramColumns: string[] = [],
   groupingSelectOptions: IGroupingSelectOption[],
-  groupFields: { [key: string]: string } | null,
+  groupFields: { [key: string]: unknown } | null,
   order: { left: string[]; middle: string[]; right: string[] },
   hiddenColumns: string[],
   sortFields?: any[],
@@ -37,6 +41,36 @@ function getImagesExploreTableColumns(
   onGroupingToggle?: (params: IOnGroupingSelectChangeParams) => void,
 ): ITableColumn[] {
   let columns: ITableColumn[] = [
+    {
+      key: 'experiment',
+      content: <span>Name</span>,
+      topHeader: 'Experiment',
+      pin: order?.left?.includes('experiment')
+        ? 'left'
+        : order?.middle?.includes('experiment')
+        ? null
+        : order?.right?.includes('experiment')
+        ? 'right'
+        : null,
+      columnOptions: getColumnOptions(
+        grouping!,
+        onGroupingToggle!,
+        AppNameEnum.IMAGES!,
+        'run.props.experiment.name',
+      ),
+    },
+    {
+      key: 'experiment_description',
+      content: <span>Description</span>,
+      topHeader: 'Experiment',
+      pin: order?.left?.includes('experiment_description')
+        ? 'left'
+        : order?.middle?.includes('experiment_description')
+        ? null
+        : order?.right?.includes('experiment_description')
+        ? 'right'
+        : null,
+    },
     {
       key: 'hash',
       content: <span>Hash</span>,
@@ -73,24 +107,7 @@ function getImagesExploreTableColumns(
         'run.props.name',
       ),
     },
-    {
-      key: 'experiment',
-      content: <span>Experiment</span>,
-      topHeader: 'Run',
-      pin: order?.left?.includes('experiment')
-        ? 'left'
-        : order?.middle?.includes('experiment')
-        ? null
-        : order?.right?.includes('experiment')
-        ? 'right'
-        : null,
-      columnOptions: getColumnOptions(
-        grouping!,
-        onGroupingToggle!,
-        AppNameEnum.IMAGES!,
-        'run.props.experiment.name',
-      ),
-    },
+
     {
       key: 'description',
       content: <span>Description</span>,
@@ -130,6 +147,16 @@ function getImagesExploreTableColumns(
         : order?.middle?.includes('date')
         ? null
         : order?.right?.includes('date')
+        ? 'right'
+        : null,
+    },
+    {
+      key: 'tags',
+      content: <span>Tags</span>,
+      topHeader: 'Run',
+      pin: order?.left?.includes('tags')
+        ? 'left'
+        : order?.right?.includes('tags')
         ? 'right'
         : null,
     },
@@ -289,8 +316,19 @@ function getImagesExploreTableColumns(
   return columns;
 }
 
+const TagsColumn = (props: {
+  runHash: string;
+  tags: ITagInfo[];
+  onRunsTagsChange: (runHash: string, tags: ITagInfo[]) => void;
+  headerRenderer: () => React.ReactNode;
+  addTagButtonSize: 'xxSmall' | 'xSmall';
+}) => {
+  return <AttachedTagsList {...props} inlineAttachedTagsList />;
+};
+
 function imagesExploreTableRowRenderer(
   rowData: any,
+  onRunsTagsChange: (runHash: string, tags: ITagInfo[]) => void,
   actions?: { [key: string]: (e: any) => void },
   groupHeaderRow = false,
   columns: string[] = [],
@@ -380,7 +418,14 @@ function imagesExploreTableRowRenderer(
     return _.merge({}, rowData, row);
   } else {
     const row = {
-      experiment: rowData?.experiment ?? 'default',
+      experiment: {
+        content: (
+          <ExperimentNameBox
+            experimentName={rowData.experiment}
+            experimentId={rowData.experimentId}
+          />
+        ),
+      },
       run: {
         content: (
           <RunNameColumn
@@ -407,6 +452,17 @@ function imagesExploreTableRowRenderer(
       value: rowData.value,
       step: rowData.step,
       epoch: rowData.epoch,
+      tags: {
+        content: (
+          <TagsColumn
+            runHash={rowData.hash}
+            tags={rowData.tags}
+            onRunsTagsChange={onRunsTagsChange}
+            headerRenderer={() => <></>}
+            addTagButtonSize='xxSmall'
+          />
+        ),
+      },
       time:
         rowData.time === null
           ? '-'

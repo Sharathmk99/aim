@@ -51,12 +51,13 @@ class PropsView(BaseModel):
     class Tag(BaseModel):
         id: UUID
         name: str
-        color: str
-        description: str
+        color: Optional[str] = None
+        description: Optional[str] = None
 
     class Experiment(BaseModel):
         id: UUID
         name: str
+        description: Optional[str] = None
 
     name: Optional[str] = None
     description: Optional[str] = None
@@ -74,22 +75,34 @@ class MetricSearchRunView(BaseModel):
     props: PropsView
 
 
+class ArtifactInfo(BaseModel):
+    name: str
+    path: str
+    uri: str
+
+
 class RunInfoOut(BaseModel):
     params: dict
     traces: Dict[str, List[TraceOverview]]
     props: PropsView
+    artifacts: List[ArtifactInfo]
 
 
 RunMetricSearchApiOut = Dict[str, MetricSearchRunView]
 
 
 class RunSearchRunView(BaseModel):
-    params: dict
-    traces: List[TraceOverview]
+    params: Optional[dict]
+    traces: Optional[List[TraceOverview]]
     props: PropsView
 
 
 RunSearchApiOut = Dict[str, RunSearchRunView]
+
+
+class RunActiveOut(BaseModel):
+    traces: Dict[str, List[TraceOverview]]
+    props: PropsView
 
 
 # request models

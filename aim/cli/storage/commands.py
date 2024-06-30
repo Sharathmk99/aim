@@ -3,22 +3,17 @@ import os
 from tqdm import tqdm
 
 from aim.cli.runs.utils import match_runs
-from aim.cli.upgrade.utils import convert_2to3
 
-from aim.sdk.maintenance_run import MaintenanceRun
+from aim.sdk.maintenance_run import MaintenanceRun as Run
 from aim.sdk.utils import backup_run, restore_run_backup
 from aim.sdk.repo import Repo
+from aim.sdk.index_manager import RepoIndexManager
 
 
 @click.group()
 @click.option('--repo', required=False,
               default=os.getcwd(),
-              type=click.Path(
-                  exists=True,
-                  file_okay=False,
-                  dir_okay=True,
-                  writable=True
-              ))
+              type=str)
 @click.pass_context
 def storage(ctx, repo):
     """Manage aim repository data & format updates."""
@@ -33,20 +28,11 @@ def upgrade(ctx):
     pass
 
 
-@upgrade.command(name='2to3')
-@click.option('--drop-existing', required=False, is_flag=True, default=False)
-@click.option('--skip-failed-runs', required=False, is_flag=True, default=False)
-@click.option('--skip-checks', required=False, is_flag=True, default=False)
-@click.pass_context
-def v2to3(ctx, drop_existing, skip_failed_runs, skip_checks):
-    repo_path = ctx.obj['repo']
-    convert_2to3(repo_path, drop_existing, skip_failed_runs, skip_checks)
-
-
 @upgrade.command(name='3.11+')
 @click.argument('hashes', nargs=-1, type=str)
 @click.pass_context
-def to_3_11(ctx, hashes):
+@click.option('-y', '--yes', is_flag=True, help='Automatically confirm prompt')
+def to_3_11(ctx, hashes, yes):
     """Optimize Runs Metrics data for read access."""
     if len(hashes) == 0:
         click.echo('Please specify at least one Run to update.')
@@ -54,20 +40,25 @@ def to_3_11(ctx, hashes):
     repo_path = ctx.obj['repo']
     repo = Repo.from_path(repo_path)
 
-    matched_hashes = match_runs(repo_path, hashes)
+    matched_hashes = match_runs(repo, hashes)
     remaining_runs = []
-    confirmed = click.confirm(f'This command will optimize the metrics data for {len(matched_hashes)} runs from aim '
-                              f'repo located at \'{repo_path}\'. This process might take a while. '
-                              f'Do you want to proceed?')
+    if yes:
+        confirmed = True
+    else:
+        confirmed = click.confirm(f'This command will optimize the metrics data for {len(matched_hashes)} '
+                                  f'runs from aim repo located at \'{repo_path}\'. This process might take a while. '
+                                  f'Do you want to proceed?')
     if not confirmed:
         return
 
+    index_manager = RepoIndexManager.get_index_manager(repo)
     for run_hash in tqdm(matched_hashes):
         try:
-            run = MaintenanceRun(run_hash, repo=repo)
+            run = Run(run_hash, repo=repo)
             if run.check_metrics_version():
                 backup_run(run)
                 run.update_metrics()
+                index_manager.index(run_hash)
             else:
                 click.echo(f'Run {run.hash} is already up to date. Skipping')
         except Exception:
@@ -85,25 +76,30 @@ def to_3_11(ctx, hashes):
 @storage.command(name='restore')
 @click.argument('hashes', nargs=-1, type=str)
 @click.pass_context
-def restore_runs(ctx, hashes):
-    """Rollback Runs data for given run hashes to the previous ."""
+@click.option('-y', '--yes', is_flag=True, help='Automatically confirm prompt')
+def restore_runs(ctx, hashes, yes):
+    """Rollback Runs data for given run hashes to the previous metric format. """
     if len(hashes) == 0:
         click.echo('Please specify at least one Run to delete.')
         exit(1)
     repo_path = ctx.obj['repo']
     repo = Repo.from_path(repo_path)
 
-    matched_hashes = match_runs(repo_path, hashes, lookup_dir='bcp')
-    confirmed = click.confirm(f'This command will restore {len(matched_hashes)} runs from aim repo '
-                              f'located at \'{repo_path}\'. Do you want to proceed?')
+    matched_hashes = match_runs(repo, hashes, lookup_dir='bcp')
+    if yes:
+        confirmed = True
+    else:
+        confirmed = click.confirm(f'This command will restore {len(matched_hashes)} runs from aim repo '
+                                  f'located at \'{repo_path}\'. Do you want to proceed?')
     if not confirmed:
         return
 
     remaining_runs = []
+    index_manager = RepoIndexManager.get_index_manager(repo)
     for run_hash in tqdm(matched_hashes):
         try:
             restore_run_backup(repo, run_hash)
-            MaintenanceRun(run_hash, repo=repo)  # force indexing to set index metadata
+            index_manager.index(run_hash)
         except Exception as e:
             click.echo(f'Error while trying to restore run \'{run_hash}\'. {str(e)}.', err=True)
             remaining_runs.append(run_hash)
@@ -113,3 +109,35 @@ def restore_runs(ctx, hashes):
     else:
         click.echo('Something went wrong while restoring runs. Remaining runs are:', err=True)
         click.secho('\t'.join(remaining_runs), fg='yellow')
+
+
+@storage.command(name='prune')
+@click.pass_context
+def prune(ctx):
+    """Remove dangling/orphan params/sequences with no referring runs."""
+
+    repo_path = ctx.obj['repo']
+    repo = Repo.from_path(repo_path)
+    repo.prune()
+
+
+@storage.command('reindex')
+@click.option('-y', '--yes', is_flag=True, help='Automatically confirm prompt')
+@click.pass_context
+def reindex(ctx, yes):
+    """ Recreate index database from scratch. """
+    repo_path = ctx.obj['repo']
+    repo = Repo.from_path(repo_path)
+    click.secho(f'This command will forcefully recreate index db for Aim Repo \'{repo_path}\'.\n'
+                f'Please stop the Aim UI to not interfere with the procedure.')
+
+    if yes:
+        confirmed = True
+    else:
+        confirmed = click.confirm('Do you want to proceed?')
+    if not confirmed:
+        return
+
+    repo._recreate_index()
+
+    return

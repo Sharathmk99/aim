@@ -1,7 +1,10 @@
 import pytz
 
 from typing import Collection, Union, List, Optional
+from sqlalchemy import __version__ as sa_version
+from sqlalchemy import delete
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import IntegrityError
 
 from aim.storage.types import SafeNone
 from aim.storage.structured.entities import (
@@ -9,12 +12,14 @@ from aim.storage.structured.entities import (
     Experiment as IExperiment,
     Tag as ITag,
     Note as INote,
+    RunInfo as IRunInfo,
     RunCollection,
     TagCollection,
     NoteCollection
 )
 from aim.storage.structured.sql_engine.models import (
     Run as RunModel,
+    RunInfo as RunInfoModel,
     Experiment as ExperimentModel,
     Tag as TagModel,
     Note as NoteModel,
@@ -22,6 +27,13 @@ from aim.storage.structured.sql_engine.models import (
 )
 from aim.storage.structured.sql_engine.utils import ModelMappedClassMeta, ModelMappedCollection
 from aim.storage.structured.sql_engine.utils import ModelMappedProperty as Property
+
+
+def session_commit_or_flush(session):
+    if getattr(session, 'autocommit', True) and sa_version >= '2.0.0':
+        session.commit()
+    else:
+        session.flush()
 
 
 def timestamp_or_none(dt):
@@ -47,6 +59,7 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
         Property('experiment', autogenerate=False),
         Property('tags', autogenerate=False),
         Property('notes', autogenerate=False),
+        Property('info', autogenerate=False),
     ]
 
     def __init__(self, model: RunModel, session):
@@ -67,14 +80,14 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
             raise ValueError(f'Run with hash \'{runhash}\' already exists.')
         run = RunModel(runhash, created_at)
         session.add(run)
-        session.flush()
+        session_commit_or_flush(session)
         return ModelMappedRun(run, session)
 
     @classmethod
     def delete_run(cls, runhash: str, session) -> bool:
         try:
             rows_affected = session.query(RunModel).filter(RunModel.hash == runhash).delete()
-            session.flush()
+            session_commit_or_flush(session)
         except Exception:
             return False
         return rows_affected > 0
@@ -135,19 +148,43 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
     def experiment(self) -> Union[str, SafeNone]:
         return self.experiment_obj.name if self.experiment_obj else SafeNone()
 
+    @property
+    def info(self) -> Optional[IRunInfo]:
+        session = self._session
+        if self._model:
+            if self._model.info:
+                return ModelMappedRunInfo(self._model.info, session)
+            else:
+                info = RunInfoModel()
+
+                self._model.info = info
+                session.add(info)
+                session.add(self._model)
+                session_commit_or_flush(session)
+
+                return ModelMappedRunInfo(self._model.info, session)
+
     @experiment.setter
     def experiment(self, value: str):
+        def unsafe_set_exp():
+            if value is None:
+                exp = None
+            else:
+                exp = session.query(ExperimentModel).filter(ExperimentModel.name == value).first()
+                if not exp:
+                    exp = ExperimentModel(value)
+                    session.add(exp)
+            self._model.experiment = exp
+            session.add(self._model)
+
         session = self._session
-        if value is None:
-            exp = None
-        else:
-            exp = session.query(ExperimentModel).filter(ExperimentModel.name == value).first()
-            if not exp:
-                exp = ExperimentModel(value)
-                session.add(exp)
-        self._model.experiment = exp
-        session.add(self._model)
-        session.flush()
+        unsafe_set_exp()
+        try:
+            session_commit_or_flush(session)
+        except IntegrityError:
+            session.rollback()
+            unsafe_set_exp()
+            session.flush()
 
     @property
     def tags_obj(self) -> TagCollection:
@@ -169,7 +206,7 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
             session.add(tag)
         self._model.tags.append(tag)
         session.add(self._model)
-        session.flush()
+        session_commit_or_flush(session)
 
     def remove_tag(self, tag_name: str) -> bool:
         session = self._session
@@ -180,7 +217,7 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
                 tag_removed = True
                 break
         session.add(self._model)
-        session.flush()
+        session_commit_or_flush(session)
         return tag_removed
 
     @property
@@ -221,13 +258,14 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
         note = NoteModel(content)
         session.add(note)
         self._model.notes.append(note)
+        session.flush()
 
         audit_log = NoteAuditLogModel(action="Created", before=None, after=content)
+        audit_log.note_id = note.id
         session.add(audit_log)
-        note.audit_logs.append(audit_log)
 
         session.add(self._model)
-        session.flush()
+        session_commit_or_flush(session)
 
         return note
 
@@ -240,11 +278,12 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
         note.content = content
 
         audit_log = NoteAuditLogModel(action="Updated", before=before, after=content)
+        audit_log.note_id = _id
         session.add(audit_log)
-        note.audit_logs.append(audit_log)
 
         session.add(note)
-        session.flush()
+
+        session_commit_or_flush(session)
 
         return note
 
@@ -255,21 +294,24 @@ class ModelMappedRun(IRun, metaclass=ModelMappedClassMeta):
         audit_log.note_id = _id
         session.add(audit_log)
 
-        session.query(NoteModel).filter(
-            NoteModel.run_id == self._model.id,
-            NoteModel.id == _id,
-        ).delete()
-        session.flush()
+        delete_stmnt = delete(NoteModel).where(NoteModel.run_id == self._model.id,
+                                               NoteModel.id == _id,)
+        session.execute(delete_stmnt)
+
+        session_commit_or_flush(session)
 
 
 class ModelMappedExperiment(IExperiment, metaclass=ModelMappedClassMeta):
     __model__ = ExperimentModel
     __mapped_properties__ = [
         Property('name'),
+        Property('description'),
         Property('uuid', with_setter=False),
         Property('archived', 'is_archived'),
         Property('created_at', with_setter=False),
+        Property('creation_time', 'created_at', get_modifier=timestamp_or_none, with_setter=False),
         Property('updated_at', with_setter=False),
+        Property('notes', autogenerate=False)
     ]
 
     def __init__(self, model_inst: ExperimentModel, session):
@@ -297,7 +339,7 @@ class ModelMappedExperiment(IExperiment, metaclass=ModelMappedClassMeta):
             raise ValueError(f'Experiment with name \'{name}\' already exists.')
         exp = ExperimentModel(name)
         session.add(exp)
-        session.flush()
+        session_commit_or_flush(session)
         return ModelMappedExperiment(exp, session)
 
     @property
@@ -330,6 +372,22 @@ class ModelMappedExperiment(IExperiment, metaclass=ModelMappedClassMeta):
         return ModelMappedExperimentCollection(session, query=q)
 
     @classmethod
+    def delete_experiment(cls, _id: str, **kwargs) -> bool:
+        session = kwargs.get('session')
+        if not session:
+            return False
+        try:
+            exp = session.query(ExperimentModel).filter(ExperimentModel.uuid == _id).first()
+            # delete all runs and notes and experiment
+            session.query(RunModel).filter(RunModel.experiment_id == exp.id).delete()
+            session.query(NoteModel).filter(NoteModel.experiment_id == exp.id).delete()
+            rows_affected = session.query(ExperimentModel).filter(ExperimentModel.uuid == _id).delete()
+            session_commit_or_flush(session)
+        except Exception:
+            return False
+        return rows_affected > 0
+
+    @classmethod
     def search(cls, term: str, **kwargs) -> Collection[IExperiment]:
         session = kwargs.get('session')
         if not session:
@@ -339,6 +397,79 @@ class ModelMappedExperiment(IExperiment, metaclass=ModelMappedClassMeta):
             joinedload(ExperimentModel.runs),
         ]).filter(ExperimentModel.name.like(term))
         return ModelMappedExperimentCollection(session, query=q)
+
+    @property
+    def notes(self) -> List[dict]:
+        session = self._session
+
+        qs = session.query(NoteModel).filter(
+            NoteModel.experiment_id == self._model.id,
+        ).order_by(NoteModel.updated_at.desc())
+
+        return [{
+            "id": note.id,
+            "content": note.content,
+            "created_at": note.created_at,
+            "updated_at": note.updated_at
+        } for note in qs]
+
+    def find_note(self, _id: int):
+        session = self._session
+
+        qs = session.query(NoteModel).filter(
+            NoteModel.experiment_id == self._model.id,
+            NoteModel.id == _id
+        )
+        return qs.first()
+
+    def add_note(self, content: str):
+        session = self._session
+
+        note = NoteModel(content)
+        session.add(note)
+        self._model.notes.append(note)
+        session.flush()
+
+        audit_log = NoteAuditLogModel(action="Created", before=None, after=content)
+        audit_log.note_id = note.id
+        session.add(audit_log)
+
+        session.add(self._model)
+        session_commit_or_flush(session)
+
+        return note
+
+    def update_note(self, _id: int, content):
+        session = self._session
+
+        note = self.find_note(_id=_id)
+
+        before = note.content
+        note.content = content
+
+        audit_log = NoteAuditLogModel(action="Updated", before=before, after=content)
+        audit_log.note_id = note.id
+        session.add(audit_log)
+
+        session.add(note)
+        session_commit_or_flush(session)
+
+        return note
+
+    def remove_note(self, _id: int):
+        session = self._session
+
+        audit_log = NoteAuditLogModel(action="Deleted", before=None, after=None)
+        audit_log.note_id = _id
+        session.add(audit_log)
+
+        delete_stmnt = delete(NoteModel).where(NoteModel.experiment_id == self._model.id,
+                                               NoteModel.id == _id, )
+        session.execute(delete_stmnt)
+        session_commit_or_flush(session)
+
+    def refresh_model(self):
+        self._session.refresh(self._model)
 
 
 class ModelMappedTag(ITag, metaclass=ModelMappedClassMeta):
@@ -378,7 +509,7 @@ class ModelMappedTag(ITag, metaclass=ModelMappedClassMeta):
             raise ValueError(f'Tag with name \'{name}\' already exists.')
         tag = TagModel(name)
         session.add(tag)
-        session.flush()
+        session_commit_or_flush(session)
         return ModelMappedTag(tag, session)
 
     @classmethod
@@ -422,6 +553,7 @@ class ModelMappedTag(ITag, metaclass=ModelMappedClassMeta):
         model_obj = session.query(TagModel).filter(TagModel.uuid == _id).first()
         if model_obj:
             session.delete(model_obj)
+            session_commit_or_flush(session)
             return True
         return False
 
@@ -489,8 +621,26 @@ class ModelMappedNote(INote, metaclass=ModelMappedClassMeta):
         model_obj = session.query(NoteModel).filter(NoteModel.id == _id).first()
         if model_obj:
             session.delete(model_obj)
+            session_commit_or_flush(session)
             return True
         return False
+
+
+class ModelMappedRunInfo(IRunInfo, metaclass=ModelMappedClassMeta):
+    __model__ = RunInfoModel
+    __mapped_properties__ = [
+        Property('created_at', with_setter=False),
+        Property('updated_at', with_setter=False),
+        Property('last_notification_index'),
+    ]
+
+    def __init__(self, model_inst: RunInfoModel, session):
+        self._model = model_inst
+        self._id = model_inst.id
+        self._session = session
+
+    def __repr__(self) -> str:
+        return f'<ModelMappedRunInfo id={self._id}>'
 
 
 ModelMappedRunCollection = ModelMappedCollection[ModelMappedRun]

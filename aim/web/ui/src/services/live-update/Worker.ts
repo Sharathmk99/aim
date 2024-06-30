@@ -6,7 +6,7 @@
 
 import * as Comlink from 'comlink';
 
-import { setAPIBasePath } from 'config/config';
+import { setAPIBasePath, setAPIAuthToken } from 'config/config';
 
 import {
   decodeBufferPairs,
@@ -176,6 +176,8 @@ function start(params: Object = {}): void {
  * @internal
  */
 async function startUpdateCall(): Promise<any> {
+  // calculate nec-s;
+  const timerId = setTimeout(startUpdateCall, schedulerDelay);
   try {
     logging && console.time(`${key.toString()} operated`);
     const stream = await apiMethods?.call();
@@ -192,13 +194,14 @@ async function startUpdateCall(): Promise<any> {
 
     logging && console.timeEnd(`${key.toString()} operated`);
     transferApiCallResponse(data);
-    // calculate nec-s;
-    const timerId = setTimeout(startUpdateCall, schedulerDelay);
+
     // @ts-ignore
     updateSchedule(timerId);
   } catch (e) {
+    // @ts-ignore
+    updateSchedule(timerId);
     invariantError(e, logging);
-    throw e;
+    // throw e; remove comment once there will be handle error out of worker
   }
 }
 
@@ -251,6 +254,10 @@ function replaceBasePath(basePath: string) {
   setAPIBasePath(basePath);
 }
 
+function setAuthToken(authToken: string) {
+  setAPIAuthToken(authToken);
+}
+
 const WebWorker = {
   subscribeToApiCallResult,
   setConfig,
@@ -258,6 +265,7 @@ const WebWorker = {
   close,
   stop,
   replaceBasePath,
+  setAuthToken,
 };
 
 export type IWorker = typeof WebWorker;

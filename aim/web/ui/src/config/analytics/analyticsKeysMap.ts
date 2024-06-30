@@ -20,6 +20,7 @@ export const ANALYTICS_EVENT_KEYS = {
       changeSorting: '[MetricsExplorer][Table] Change sorting',
       metricVisibilityChange:
         '[MetricsExplorer][Table] Change metric visibility',
+      compareSelectedRuns: '[MetricsExplorer][Table] Compare selected runs',
     },
     chart: {
       controls: {
@@ -44,6 +45,15 @@ export const ANALYTICS_EVENT_KEYS = {
         tooltip: {
           changeTooltipContent:
             '[MetricsExplorer][Chart][Controls] Change tooltip content',
+          display:
+            '[MetricsExplorer][Chart][Controls] Change tooltip visibility on hover',
+          appearance:
+            '[MetricsExplorer][Chart][Controls] Change tooltip appearance mode to',
+        },
+        legends: {
+          display:
+            '[MetricsExplorer][Chart][Controls] Change legends visibility', // to visible/hidden
+          mode: '[MetricsExplorer][Chart][Controls] Change legends mode', // to pinned/unpinned
         },
         exportChart: '[MetricsExplorer][Chart][Controls] Export Chart as Image',
       },
@@ -86,6 +96,7 @@ export const ANALYTICS_EVENT_KEYS = {
       changeSorting: '[ParamsExplorer][Table] Change sorting',
       metricVisibilityChange:
         '[ParamsExplorer][Table] Change metric visibility',
+      compareSelectedRuns: '[ParamsExplorer][Table] Compare selected runs',
     },
     chart: {
       controls: {
@@ -94,6 +105,10 @@ export const ANALYTICS_EVENT_KEYS = {
         tooltip: {
           changeTooltipContent:
             '[ParamsExplorer][Chart][Controls] Change tooltip content',
+          display:
+            '[ParamsExplorer][Chart][Controls] Change tooltip visibility on hover',
+          appearance:
+            '[ParamsExplorer][Chart][Controls] Change tooltip appearance mode to',
         },
         changeColorIndicatorMode:
           '[ParamsExplorer][Chart][Controls] Change color indicator mode', // to value
@@ -133,8 +148,10 @@ export const ANALYTICS_EVENT_KEYS = {
       hideAllColumns: '[RunsExplorer][Table] Hide all columns',
       showDiff: '[RunsExplorer][Table] Show columns diff',
       changeTableRowHeight: '[RunsExplorer][Table] Change rows height',
+      changeMetricsValueKey: '[RunsExplorer][Table] Change metrics value key',
       changeSorting: '[RunsExplorer][Table] Change sorting',
       metricVisibilityChange: '[RunsExplorer][Table] Change metric visibility',
+      compareSelectedRuns: '[RunsExplorer][Table] Compare selected runs',
     },
   },
   scatters: {
@@ -158,6 +175,7 @@ export const ANALYTICS_EVENT_KEYS = {
       changeSorting: '[ScattersExplorer][Table] Change sorting',
       metricVisibilityChange:
         '[ScattersExplorer][Table] Change metric visibility',
+      compareSelectedRuns: '[ScattersExplorer][Table] Compare selected runs',
     },
     chart: {
       controls: {
@@ -166,6 +184,10 @@ export const ANALYTICS_EVENT_KEYS = {
         tooltip: {
           changeTooltipContent:
             '[ScattersExplorer][Chart][Controls] Change tooltip content',
+          display:
+            '[ScattersExplorer][Chart][Controls] Change tooltip visibility on hover',
+          appearance:
+            '[ScattersExplorer][Chart][Controls] Change tooltip appearance mode to',
         },
         exportChart:
           '[ScattersExplorer][Chart][Controls] Export Chart as Image',
@@ -204,6 +226,7 @@ export const ANALYTICS_EVENT_KEYS = {
       changeSorting: '[ImagesExplorer][Table] Change sorting',
       metricVisibilityChange:
         '[ImagesExplorer][Table] Change metric visibility',
+      compareSelectedRuns: '[ImagesExplorer][Table] Compare selected runs',
     },
     groupings: {
       row: {
@@ -223,10 +246,38 @@ export const ANALYTICS_EVENT_KEYS = {
         tooltip: {
           changeTooltipContent:
             '[ImagesExplorer][ImagesPanel][Controls] Change tooltip content',
+          display:
+            '[ImagesExplorer][Chart][Controls] Change tooltip visibility on hover',
+          appearance:
+            '[ImagesExplorer][Chart][Controls] Change tooltip appearance mode to',
         },
       },
       openFullSizeMode:
         '[ImagesExplorer][ImagesPanel][ImageBox] Open full size mode',
+    },
+  },
+  experiment: {
+    pageView: '[Experiment] Page view',
+    tabs: {
+      overview: {
+        tabView: '[Experiment] [Overview] Tab view',
+      },
+      runs: {
+        tabView: '[Experiment] [Runs] Tab view',
+      },
+      notes: {
+        tabView: '[Experiment] [Notes] Tab view',
+        clickSaveButton: '[Experiment] [Notes] Click save button',
+        clickUpdateButton: '[Experiment] [Notes] Click update button',
+        clickDeleteButton: '[Experiment] [Notes] Click delete button',
+      },
+      settings: {
+        tabView: '[Experiment] [Settings] Tab view',
+        deleteExperiment: '[Experiment] [Settings] Delete experiment',
+      },
+    },
+    table: {
+      compareSelectedRuns: '[Experiment] [Runs] Compare selected runs',
     },
   },
   runDetails: {
@@ -296,17 +347,22 @@ export const ANALYTICS_EVENT_KEYS = {
     pageView: '[BookmarksPage] Page view',
     view: '[BookmarksPage] View bookmark',
   },
-  home: {
-    pageView: '[HomePage] Page view',
-    activityCellClick: '[HomePage] Click on Activity cell',
-    createGithubIssue: '[HomePage] Click on create gitHub issue',
-    slackCommunity: '[HomePage] Click on Join Aim slack community',
-    docs: '[HomePage] Click on documentation icon',
-    colab: '[HomePage] Click on colab notebook icon',
-    liveDemo: '[HomePage] Click on Live demo icon',
+  dashboard: {
+    pageView: '[DashboardPage] Page view',
+    activityCellClick: '[DashboardPage] Click on Activity cell',
+    createGithubIssue: '[DashboardPage] Click on create gitHub issue',
+    docs: '[DashboardPage] Click on documentation icon',
+    colab: '[DashboardPage] Click on colab notebook icon',
+    liveDemo: '[DashboardPage] Click on Live demo icon',
+    table: {
+      compareSelectedRuns: '[MetricsExplorer][Table] Compare selected runs',
+    },
   },
   sidebar: {
-    slack: '[SideBar] Click on slack community link',
+    discord: '[Sidebar] Click on discord community link',
     docs: '[Sidebar] Click on docs link',
   },
+  figures: {} as any,
+  audios: {} as any,
+  text: {} as any,
 };

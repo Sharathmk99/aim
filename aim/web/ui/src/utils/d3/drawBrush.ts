@@ -1,15 +1,15 @@
 import * as d3 from 'd3';
 import _ from 'lodash-es';
 
-import { ZoomEnum } from 'components/ZoomInPopover/ZoomInPopover';
-
 import { IDrawBrushArgs } from 'types/utils/d3/drawBrush';
+
+import { ZoomEnum } from 'utils/d3';
 
 import getAxisScale from './getAxisScale';
 
 function drawBrush(args: IDrawBrushArgs): void {
   const {
-    index,
+    id,
     plotBoxRef,
     plotNodeRef,
     visBoxRef,
@@ -102,7 +102,6 @@ function drawBrush(args: IDrawBrushArgs): void {
       attributesRef.current.xScale,
       attributesRef.current.yScale,
     );
-    attributesRef.current.updateFocusedChart?.();
   }
 
   // This remove the grey brush area as soon as the selection has been done
@@ -149,7 +148,7 @@ function drawBrush(args: IDrawBrushArgs): void {
             history: [
               ...zoom.history,
               {
-                index,
+                id,
                 xValues,
                 yValues,
               },
@@ -189,9 +188,7 @@ function drawBrush(args: IDrawBrushArgs): void {
   }
 
   if (zoom?.history?.length) {
-    const chartZoomHistory = zoom.history.filter(
-      (item) => item.index === index,
-    );
+    const chartZoomHistory = zoom.history.filter((item) => item.id === id);
     const lastHistoryDomain = chartZoomHistory[chartZoomHistory.length - 1];
     if (lastHistoryDomain) {
       handleZoomIn(lastHistoryDomain.xValues, lastHistoryDomain.yValues);

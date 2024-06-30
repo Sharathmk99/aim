@@ -16,19 +16,23 @@ from aim.sdk.types import QueryReportMode
 from aim.web.api.runs.utils import (
     checked_query,
     collect_requested_metric_traces,
+    convert_nan_and_inf_to_str,
     custom_aligned_metrics_streamer,
     get_project_repo,
     get_run_or_404,
     get_run_params,
     get_run_props,
+    get_run_artifacts,
     metric_search_result_streamer,
+    run_active_result_streamer,
     run_search_result_streamer,
-    run_logs_streamer
-
+    run_logs_streamer,
+    run_log_records_streamer,
 )
 from aim.web.api.runs.pydantic_models import (
     MetricAlignApiIn,
     QuerySyntaxErrorOut,
+    RunActiveOut,
     RunTracesBatchApiIn,
     RunMetricCustomAlignApiOut,
     RunMetricSearchApiOut,
@@ -59,6 +63,8 @@ async def run_search_api(q: Optional[str] = '',
                          offset: Optional[str] = None,
                          skip_system: Optional[bool] = True,
                          report_progress: Optional[bool] = True,
+                         exclude_params: Optional[bool] = False,
+                         exclude_traces: Optional[bool] = False,
                          x_timezone_offset: int = Header(default=0),):
     from aim.sdk.sequence_collection import QueryRunSequenceCollection
     repo = get_project_repo()
@@ -72,7 +78,9 @@ async def run_search_api(q: Optional[str] = '',
                                       report_mode=QueryReportMode.PROGRESS_TUPLE,
                                       timezone_offset=x_timezone_offset)
 
-    streamer = run_search_result_streamer(runs, limit, skip_system, report_progress)
+    streamer = run_search_result_streamer(runs, limit,
+                                          skip_system, report_progress,
+                                          exclude_params, exclude_traces)
     return StreamingResponse(streamer)
 
 
@@ -116,6 +124,16 @@ async def run_metric_search_api(q: Optional[str] = '',
     return StreamingResponse(streamer)
 
 
+@runs_router.get('/active/', response_model=RunActiveOut)
+async def get_active_runs_api(report_progress: Optional[bool] = True):
+    repo = get_project_repo()
+    repo._prepare_runs_cache()
+
+    streamer = run_active_result_streamer(repo)
+
+    return StreamingResponse(streamer)
+
+
 @runs_router.get('/{run_id}/info/', response_model=RunInfoOut)
 async def run_params_api(run_id: str,
                          skip_system: Optional[bool] = False,
@@ -134,13 +152,16 @@ async def run_params_api(run_id: str,
     response = {
         'params': get_run_params(run, skip_system=skip_system),
         'traces': run.collect_sequence_info(sequence, skip_last_value=True),
-        'props': get_run_props(run)
+        'props': get_run_props(run),
+        'artifacts': get_run_artifacts(run),
     }
+    # Convert NaN and Inf to strings
+    response = convert_nan_and_inf_to_str(response)
 
     response['props'].update({
         'notes': len(run.props.notes_obj)
     })
-    return JSONResponse(response)
+    return response
 
 
 @runs_router.post('/{run_id}/metric/get-batch/', response_model=RunMetricsBatchApiOut)
@@ -349,6 +370,14 @@ async def get_logs_api(run_id: str, record_range: Optional[str] = ''):
     run = get_run_or_404(run_id, repo=repo)
 
     return StreamingResponse(run_logs_streamer(run, record_range))
+
+
+@runs_router.get('/{run_id}/log-records/')
+async def get_log_records_api(run_id: str, record_range: Optional[str] = ''):
+    repo = get_project_repo()
+    run = get_run_or_404(run_id, repo=repo)
+
+    return StreamingResponse(run_log_records_streamer(run, record_range))
 
 
 def add_api_routes():

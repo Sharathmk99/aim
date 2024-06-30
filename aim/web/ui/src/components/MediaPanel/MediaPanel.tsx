@@ -1,5 +1,5 @@
 import React from 'react';
-import { isEmpty } from 'lodash-es';
+import _ from 'lodash-es';
 
 import MediaSet from 'components/MediaSet/MediaSet';
 import BusyLoaderWrapper from 'components/BusyLoaderWrapper/BusyLoaderWrapper';
@@ -42,7 +42,9 @@ function MediaPanel({
   sortFieldsDict,
   sortFields,
   illustrationConfig,
+  onChangeTooltip = () => {},
   selectOptions = [],
+  onRunsTagsChange = () => {},
 }: IMediaPanelProps): React.FunctionComponentElement<React.ReactNode> {
   const [activePointRect, setActivePointRect] = React.useState<{
     top: number;
@@ -50,6 +52,10 @@ function MediaPanel({
     left: number;
     right: number;
   } | null>(null);
+  const [encodedDataKey, setEncodedDataKey] = React.useState<string>('');
+  const [encodedSortFieldsDictKey, setEncodedSortFieldsDictKey] =
+    React.useState<string>('');
+  let processedBlobUriArray = React.useRef<string[]>([]);
   let blobUriArray = React.useRef<string[]>([]);
   let timeoutID = React.useRef(0);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -146,23 +152,60 @@ function MediaPanel({
     ],
   );
 
+  function omitRunPropertyFromData(data: any) {
+    if (_.isArray(data)) {
+      return data.map((item: any) => _.omit(item, 'run'));
+    } else {
+      return Object.keys(data ?? []).reduce((acc: any, key: any) => {
+        acc[key] = omitRunPropertyFromData(data[key]);
+        return acc;
+      }, {});
+    }
+  }
+
+  React.useEffect(() => {
+    const resultEncodedDataKey = JSON.stringify(omitRunPropertyFromData(data));
+    if (encodedDataKey !== resultEncodedDataKey) {
+      setEncodedDataKey(resultEncodedDataKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  React.useEffect(() => {
+    const resultEncodedSortFieldsDictKey = JSON.stringify(sortFieldsDict);
+    if (encodedSortFieldsDictKey !== resultEncodedSortFieldsDictKey) {
+      setEncodedSortFieldsDictKey(resultEncodedSortFieldsDictKey);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortFieldsDict]);
+
   const mediaSetKey = React.useMemo(
-    () => Date.now(),
+    () => {
+      return Date.now();
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      data,
+      encodedDataKey,
       wrapperOffsetHeight,
       wrapperOffsetWidth,
       additionalProperties,
-      sortFieldsDict,
+      encodedSortFieldsDictKey,
     ],
   );
 
   function addUriToList(blobUrl: string) {
-    if (!blobsURIModel.getState()[blobUrl]) {
-      blobUriArray.current.push(blobUrl);
-      getBatch();
+    if (blobsURIModel.getState()[blobUrl]) {
+      return;
     }
+    if (blobUriArray.current.includes(blobUrl)) {
+      return;
+    }
+    if (processedBlobUriArray.current.includes(blobUrl)) {
+      return;
+    }
+
+    blobUriArray.current.push(blobUrl);
+    getBatch();
   }
 
   const getBatch = throttle(() => {
@@ -170,10 +213,20 @@ function MediaPanel({
       window.clearTimeout(timeoutID.current);
     }
     timeoutID.current = window.setTimeout(() => {
-      if (!isEmpty(blobUriArray.current)) {
-        requestRef.current = getBlobsData(blobUriArray.current);
-        requestRef.current.call().then(() => {
-          blobUriArray.current = [];
+      if (!_.isEmpty(blobUriArray.current)) {
+        const processingBlobUriArray = Object.assign([], blobUriArray.current);
+        blobUriArray.current = [];
+        processedBlobUriArray.current = [
+          ...new Set([
+            ...processedBlobUriArray.current,
+            ...processingBlobUriArray,
+          ]),
+        ];
+        requestRef.current = getBlobsData(processingBlobUriArray);
+        requestRef.current.call().catch((err: any) => {
+          processedBlobUriArray.current = processedBlobUriArray.current.filter(
+            (uri: string) => !processingBlobUriArray.includes(uri),
+          );
         });
       }
     }, BATCH_SEND_DELAY);
@@ -226,7 +279,7 @@ function MediaPanel({
         ) : (
           <>
             <div className='MediaPanel__Container'>
-              {!isEmpty(data) ? (
+              {!_.isEmpty(data) ? (
                 <div
                   className='MediaPanel'
                   style={{ height: `calc(100% - ${actionPanelSize || 0})` }}
@@ -253,23 +306,29 @@ function MediaPanel({
                         mediaType={mediaType}
                         sortFields={sortFields}
                         selectOptions={selectOptions}
+                        onRunsTagsChange={onRunsTagsChange}
                       />
                     </ErrorBoundary>
                   </div>
                   {tooltipType && (
                     <ErrorBoundary>
                       <ChartPopover
+                        key={'popover-' + tooltipType}
                         containerNode={containerRef.current}
                         activePointRect={activePointRect}
                         open={
                           resizeMode !== ResizeModeEnum.MaxHeight &&
                           !panelResizing &&
-                          (tooltip?.display || focusedState?.active)
+                          !!tooltip?.display
                         }
+                        forceOpen={!!focusedState?.active}
                         chartType={tooltipType}
                         tooltipContent={tooltip?.content || {}}
+                        tooltipAppearance={tooltip?.appearance}
                         focusedState={focusedState}
                         selectOptions={selectOptions}
+                        onRunsTagsChange={onRunsTagsChange}
+                        onChangeTooltip={onChangeTooltip}
                       />
                     </ErrorBoundary>
                   )}
